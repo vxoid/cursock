@@ -11,12 +11,12 @@ impl Arp {
     ///
     /// # Examples
     /// ```
-    /// use arpv::*;
-    /// use arpv::utils::*;
+    /// use cursock::*;
+    /// use cursock::utils::*;
     /// #[cfg(target_os = "linux")]
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error"); // Linux
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error"); // Linux
     /// #[cfg(target_os = "windows")]
-    /// let arp = arpv::Arp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
+    /// let arp = cursock::Arp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
     /// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
@@ -29,10 +29,10 @@ impl Arp {
     /// Does an arp request
     /// # Examples
     /// ```
-    /// use arpv::*;
-    /// use arpv::utils::*;
+    /// use cursock::*;
+    /// use cursock::utils::*;
     ///
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error");
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
     /// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
     /// arp.who_has(&ip_addr, true).expect("send error")
     /// ```
@@ -74,10 +74,10 @@ impl Arp {
     /// Does an arp reply
     /// # Examples
     /// ```
-    /// use arpv::*;
-    /// use arpv::utils::*;
+    /// use cursock::*;
+    /// use cursock::utils::*;
     ///
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error");
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
     /// let ip_addr1: Ipv4 = Handle::from([192, 168, 1, 1]);
     /// let mac_addr1: Mac = Handle::from([0xff; 6]);
     /// let ip_addr2: Ipv4 = Handle::from([192, 168, 1, 2]);
@@ -128,10 +128,10 @@ impl Arp {
     /// Reads an arp reply
     /// # Examples
     /// ```
-    /// use arpv::*;
-    /// use arpv::utils::*;
+    /// use cursock::*;
+    /// use cursock::utils::*;
     ///
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error");
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
     /// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
     /// arp.who_has(&ip_addr, true).expect("send error");
     /// let response = arp.read_arp(true).expect("read error");
@@ -179,11 +179,11 @@ impl Arp {
     /// Reads arp with timeout    
     /// # Examples
     /// ```
-    /// use arpv::*;
-    /// use arpv::utils::*;
+    /// use cursock::*;
+    /// use cursock::utils::*;
     /// use std::time::Duration;
     ///
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error");
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
     /// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
     /// arp.who_has(&ip_addr, true).expect("send error");
     /// let response = arp.read_arp_timeout(Duration::from_millis(1000), true).expect("read error");
@@ -228,9 +228,9 @@ impl Arp {
     ///
     /// # Examples
     /// ```
-    /// use arpv::*;
+    /// use cursock::*;
     ///
-    /// let arp = arpv::Arp::new("wlan0", true).expect("initialize error");
+    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
     /// arp.destroy()
     /// ```
     pub fn destroy(&self) {

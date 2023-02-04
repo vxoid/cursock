@@ -6,7 +6,7 @@ use std::ffi::CString;
 use crate::*;
 
 /// Struct for raw socketing
-/// 
+///
 /// # Examples
 /// ```
 /// #[cfg(target_os = "linux")]
@@ -14,11 +14,11 @@ use crate::*;
 /// #[cfg(target_os = "windows")]
 /// let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
 /// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
-/// 
+///
 /// let buffer: [u8; 1024] = [0; 1024];
-/// 
+///
 /// socket.send_raw_packet(&buffer, true).expect("send error");
-/// 
+///
 /// socket.destroy()
 /// ```
 pub struct Socket {
@@ -594,7 +594,7 @@ fn get_interface_info(adapter_name: &str) -> Result<(Ipv4, Mac), CursedErrorHand
         Some(adapter_info) => adapter_info,
         None => {
             return Err(CursedErrorHandle::new(
-                CursedError::InvalidOption,
+                CursedError::InvalidArgument,
                 format!("{} is not valid adapter name", adapter_name),
             ))
         }

@@ -13,7 +13,7 @@ pub const MAC_LEN: usize = 6;
 /// trait for binary operations should be implemented on integers
 /// # Examples
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 /// struct Integer {
 ///     pub integer: u32
 /// }
@@ -50,7 +50,7 @@ pub trait BinOpers {
 /// trait for conveting one type into other similar to the From trait
 /// # Examples
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// enum Bit {
 ///     One,
@@ -85,7 +85,7 @@ pub trait Handle<T> {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
 ///
@@ -101,7 +101,7 @@ pub struct Ipv4 {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let mac_addr: Mac = Handle::from([0xff; MAC_LEN]);
 ///
@@ -117,7 +117,7 @@ pub struct Mac {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let a = 1;
 ///
@@ -170,7 +170,7 @@ pub struct IpHeader {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let response = ArpResponse::new(Handle::from([192, 168, 1, 1]), Handle::from([0; MAC_LEN]), Handle::from([192, 168, 1, 2]), Handle::from([0; MAC_LEN]));
 ///
@@ -195,7 +195,7 @@ pub struct ArpResponse {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let bit = Bit::Zero;
 ///
@@ -398,7 +398,7 @@ impl ArpResponse {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let a = 3;
 /// let b = power(a as f64, 2); // 1*3*3
@@ -424,7 +424,7 @@ fn power_with_start(start: f64, f: f64, power: u16) -> f64 {
 /// # Example
 ///
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let a: [i128; 4] = [1210, 3271231, 478654, 239]; // Just random numbers
 /// let mut b: [i128; 4] = [0; 4];
@@ -458,7 +458,7 @@ pub fn memcpy<TD, TS>(dest: *mut TD, src: *const TS, size: usize) -> *mut TD {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 ///
 /// let bytes = b"Hello, world";
 ///
@@ -478,7 +478,7 @@ pub fn str_from_bytes(bytes: &[u8]) -> String {
 ///
 /// # Example
 /// ```
-/// use arpv::utils::*;
+/// use cursock::utils::*;
 /// use std::ffi::CString;
 ///
 /// let string = "Hello, world";

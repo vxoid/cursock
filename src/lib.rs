@@ -1,11 +1,11 @@
-//! # Arpv
+//! # Cursock
 //!
-//! `arpv` is a crate that designed to help with socketing.
+//! `cursock` is a crate that designed to help with socketing.
 
 extern crate curerr;
 
-pub mod utils;
 pub mod ccs;
+pub mod utils;
 
 mod arp;
 mod socket;
