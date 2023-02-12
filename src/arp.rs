@@ -1,4 +1,4 @@
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use crate::*;
 
@@ -118,7 +118,7 @@ impl Arp {
         if debug {
             print!("Buffer: [ ");
             for byte in buffer {
-                print!("{} ", byte)
+                print!("{:X} ", byte)
             }
             println!("]")
         }
@@ -143,15 +143,16 @@ impl Arp {
             Handle::from(0),
             Handle::from([0; MAC_LEN]),
         );
-        let mut buffer: [u8; READ_BUFFER_LEN] = [0; READ_BUFFER_LEN];
+        const BUFFER_SIZE: usize = 60;
+        let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
         let eth_header: &EthHeader = unsafe { &*(buffer.as_ptr() as *mut EthHeader) };
         let arp_header: &ArpHeader =
             unsafe { &*((buffer.as_ptr() as usize + ETH_HEADER_SIZE) as *mut ArpHeader) };
 
         loop {
-            if let Err(_) = self.socket.read_raw_packet(&mut buffer, debug) {
-                continue;
+            if let Err(err) = self.socket.read_raw_packet(&mut buffer, debug) {
+                return Err(err);
             }
 
             if ccs::ntohs(eth_header.proto) == ARP_PROTO
@@ -190,34 +191,22 @@ impl Arp {
     /// ```
     pub fn read_arp_timeout(
         &self,
-        timeout: Duration,
         debug: bool,
+        timeout: Duration,
     ) -> Result<ArpResponse, CursedErrorHandle> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let wrapper: Wrapper<Arp> = Wrapper::new(self);
-
-        thread::spawn(move || {
-            let _ = tx.send(wrapper.reference().read_arp(debug));
-        });
-
-        let result: Result<ArpResponse, CursedErrorHandle> = match rx.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                return Err(CursedErrorHandle::new(
-                    CursedError::TimeOut,
-                    format!("Receive timed out ({} secconds)", timeout.as_secs_f64()),
-                ))
-            }
-            Err(err) => {
-                return Err(CursedErrorHandle::new(
-                    CursedError::ThreadJoin,
-                    format!("Can\'t receive response due to \"{}\"", err.to_string()),
-                ))
-            }
-        };
-
-        result
+        match Self::read_arp_with_timeout(Wrapper::new(self), debug, timeout) {
+            Some(result) => result,
+            None => return Err(
+                CursedErrorHandle::new(CursedError::TimeOut, String::from("arp read timed out!"))
+            ),
+        }
     }
+
+    timeout!{
+        read_arp_with_timeout(arp: Wrapper<Arp> => Wrapper::reference, debug: bool) -> Result<ArpResponse, CursedErrorHandle>,
+        Self::read_arp
+    }
+
     pub fn get_src_ip(&self) -> &Ipv4 {
         self.socket.get_src_ip()
     }

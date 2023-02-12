@@ -1,12 +1,76 @@
+#[macro_export]
+macro_rules! getters {
+    (
+        $($vis:vis $fn:ident($field:ident) -> $type:ty;)*
+    ) => {
+        $(
+            $vis fn $fn(&self) -> &$type {
+                &self.$field
+            }
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! setters {
+    (
+        $($vis:vis $fn:ident($type:ty) -> $field:ident;)*
+    ) => {
+        $(
+            $vis fn $fn(&mut self, value: $type) {
+                self.$field = value
+            }
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! callback {
+    ($arg: expr) => {
+        $arg
+    };
+    ($callback: expr, $arg: expr) => {
+        $callback(&$arg)
+    }
+}
+
+#[macro_export]
+macro_rules! timeout {
+    {
+        $vis:vis $fnname:ident($($argname:ident: $arg:ty $(=> $callback: expr)?), *) -> $return:ty, $fn:expr
+    } => {
+        $vis fn $fnname($($argname: $arg,)* time: std::time::Duration) -> Option<$return> {
+            use std::thread;
+
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            thread::spawn(move || {
+                let _ = tx.send($fn($(callback!($($callback, )?$argname),)*));
+            });
+    
+            let result: $return = match rx.recv_timeout(time) {
+                Ok(result) => result,
+                Err(_) => return None,
+            };
+            
+            Some(result)
+        }
+    }
+}
+
 pub const HW_TYPE: u16 = 1;
 pub const ARP_REPLY: u16 = 2;
 pub const ARP_REQUEST: u16 = 1;
 pub const IP_PROTO: u16 = 0x0800;
 pub const ARP_PROTO: u16 = 0x0806;
+pub const ICMP_PROTO: u16 = 0x0001;
+pub const ICMP_ECHO_REQUEST: u8 = 8;
+pub const ICMP_ECHO_RESPONSE: u8 = 0;
 pub const EMPTY_ARRAY: [i8; 1] = [0];
-pub const READ_BUFFER_LEN: usize = 60;
+pub const ICMP_HEADER_SIZE: usize = std::mem::size_of::<IcmpHeader>();
 pub const ARP_HEADER_SIZE: usize = std::mem::size_of::<ArpHeader>();
 pub const ETH_HEADER_SIZE: usize = std::mem::size_of::<EthHeader>();
+pub const IP_HEADER_SIZE: usize = std::mem::size_of::<IpHeader>();
 pub const IPV4_LEN: usize = 4;
 pub const MAC_LEN: usize = 6;
 
@@ -143,6 +207,16 @@ pub struct ArpHeader {
     pub target_ip: [u8; IPV4_LEN],
 }
 
+/// icmp header
+#[repr(C)]
+pub struct IcmpHeader {
+    pub type_: u8,
+    pub code: u8,
+    pub check: u16,
+    pub id: u16,
+    pub sq: u16,
+}
+
 /// eth header
 #[repr(C)]
 pub struct EthHeader {
@@ -158,7 +232,7 @@ pub struct IpHeader {
     pub tos: u8,
     pub tot_len: u16,
     pub id: u16,
-    pub frag_off: u16,
+    pub frag: u16,
     pub ttl: u8,
     pub protocol: u8,
     pub check: u16,
@@ -191,6 +265,70 @@ pub struct ArpResponse {
     dst_ip: Ipv4,
 }
 
+/// an ip header wrapper without useless fields
+/// 
+/// 
+pub struct IpData {
+    total_len: u16,
+    ttl: u8,
+    src: Ipv4,
+    dst: Ipv4
+}
+
+/// an icmp header wrapper without useless fields
+/// 
+/// 
+pub struct IcmpData {
+    type_: IcmpType,
+    code: u8,
+    checksum: u16,
+    data: Vec<u8>
+}
+
+/// an icmp types enum
+/// 
+/// # Example
+/// ```
+/// use cursock::utils::*;
+/// 
+/// let echo_reply = IcmpType::EchoReply;
+/// let raw_echo_reply: u8 = echo_reply.to();
+/// 
+/// assert_eq!(raw_echo_reply, 0)
+/// ```
+pub enum IcmpType {
+    SKIP,
+    Reserved,
+    Redirect,
+    Photuris,
+    EchoReply,
+    Unassigned,
+    Traceroute,
+    IPv6IAmHere,
+    EchoRequest,
+    Experimental,
+    SourceQuench,
+    TimeExceeded,
+    TimestampReply,
+	IPv6WhereAreYou,
+    DomainNameReply,
+    TimestampRequest,
+    ParameterProblem,
+    AddressMaskReply,
+    InformationReply,
+    DomainNameRequest,
+    InformationRequest,
+    AddressMaskRequest,
+    RouterSolicitation,
+    MobileHostRedirect,
+    RouterAdvertisement,
+    AlternateHostAddress,
+    DestenationUnreachable,
+    DatagramConversionError,
+    MobileRegistrationReply,
+    MobileRegistrationRequest,
+}
+
 /// bit representation
 ///
 /// # Example
@@ -208,6 +346,118 @@ pub struct ArpResponse {
 pub enum Bit {
     One,
     Zero,
+}
+
+impl Handle<u8> for IcmpType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::EchoReply,
+            3 => Self::DestenationUnreachable,
+            4 => Self::SourceQuench,
+            5 => Self::Redirect,
+            6 => Self::AlternateHostAddress,
+            8 => Self::EchoRequest,
+            9 => Self::RouterAdvertisement,
+            10 => Self::RouterSolicitation,
+            11 => Self::TimeExceeded,
+            12 => Self::ParameterProblem,
+            13 => Self::TimestampRequest,
+            14 => Self::TimestampReply,
+            15 => Self::InformationRequest,
+            16 => Self::InformationReply,
+            17 => Self::AddressMaskRequest,
+            18 => Self::AddressMaskReply,
+            19..=29 => Self::Reserved,
+            30 => Self::Traceroute,
+            31 => Self::DatagramConversionError,
+            32 => Self::MobileHostRedirect,
+            33 => Self::IPv6WhereAreYou,
+            34 => Self::IPv6IAmHere,
+            35 => Self::MobileRegistrationRequest,
+            36 => Self::MobileRegistrationReply,
+            37 => Self::DomainNameRequest,
+            38 => Self::DomainNameReply,
+            39 => Self::SKIP,
+            40 => Self::Photuris,
+            41 => Self::Experimental,
+            _ => Self::Unassigned
+        }
+    }
+
+    fn to(&self) -> u8 {
+
+        match *self {
+            IcmpType::SKIP => 39,
+            IcmpType::Reserved => 19,
+            IcmpType::Redirect => 5,
+            IcmpType::Photuris => 40,
+            IcmpType::EchoReply => 0,
+            IcmpType::Unassigned => 2,
+            IcmpType::Traceroute => 30,
+            IcmpType::IPv6IAmHere => 34,
+            IcmpType::EchoRequest => 8,
+            IcmpType::Experimental => 41,
+            IcmpType::SourceQuench => 4,
+            IcmpType::TimeExceeded => 11,
+            IcmpType::TimestampReply => 14,
+            IcmpType::IPv6WhereAreYou => 33,
+            IcmpType::DomainNameReply => 38,
+            IcmpType::TimestampRequest => 13,
+            IcmpType::ParameterProblem => 12,
+            IcmpType::AddressMaskReply => 18,
+            IcmpType::InformationReply => 16,
+            IcmpType::DomainNameRequest => 37,
+            IcmpType::InformationRequest => 15,
+            IcmpType::AddressMaskRequest => 17,
+            IcmpType::RouterSolicitation => 10,
+            IcmpType::MobileHostRedirect => 32,
+            IcmpType::RouterAdvertisement => 9,
+            IcmpType::AlternateHostAddress => 6,
+            IcmpType::DestenationUnreachable => 3,
+            IcmpType::DatagramConversionError => 31,
+            IcmpType::MobileRegistrationReply => 36,
+            IcmpType::MobileRegistrationRequest => 35,
+        }
+    }
+}
+
+impl IpData {
+    pub fn new(total_len: u16, ttl: u8, src: Ipv4, dst: Ipv4) -> Self {
+        Self { total_len, ttl, src, dst }
+    }
+    
+    getters!(
+        pub get_total_len(total_len) -> u16;
+        pub get_ttl(ttl) -> u8;
+        pub get_src(src) -> Ipv4;
+        pub get_dst(dst) -> Ipv4;
+    );
+    setters!(
+        pub set_total_len(u16) -> total_len;
+        pub set_ttl(u8) -> ttl;
+        pub set_src(Ipv4) -> src;
+        pub set_dst(Ipv4) -> dst;
+    );
+}
+
+impl IcmpData {
+    pub fn new(type_: IcmpType, code: u8, checksum: u16, data: Vec<u8>) -> Self {
+        Self { type_, code, checksum, data }
+    }
+
+    getters!(
+        pub get_type(type_) -> IcmpType;
+        pub get_code(code) -> u8;
+        pub get_checksum(checksum) -> u16;
+        pub get_data(data) -> Vec<u8>;
+    );
+
+    setters!(
+        pub set_type(IcmpType) -> type_;
+        pub set_code(u8) -> code;
+        pub set_checksum(u16) -> checksum;
+        pub set_data(Vec<u8>) -> data;
+    );
 }
 
 impl<T: ?Sized> Wrapper<T> {
@@ -365,33 +615,18 @@ impl ArpResponse {
         }
     }
 
-    pub fn get_src_mac(&self) -> Mac {
-        self.src_mac.clone()
-    }
-    pub fn set_src_mac(&mut self, mac: Mac) {
-        self.src_mac = mac
-    }
-
-    pub fn get_src_ip(&self) -> Ipv4 {
-        self.src_ip.clone()
-    }
-    pub fn set_src_ip(&mut self, ip: Ipv4) {
-        self.src_ip = ip
-    }
-
-    pub fn get_dst_mac(&self) -> Mac {
-        self.dst_mac.clone()
-    }
-    pub fn set_dst_mac(&mut self, mac: Mac) {
-        self.dst_mac = mac
-    }
-
-    pub fn get_dst_ip(&self) -> Ipv4 {
-        self.dst_ip.clone()
-    }
-    pub fn set_dst_ip(&mut self, ip: Ipv4) {
-        self.dst_ip = ip
-    }
+    getters!(
+        pub get_src_mac(src_mac) -> Mac;
+        pub get_src_ip(src_ip) -> Ipv4;
+        pub get_dst_mac(dst_mac) -> Mac;
+        pub get_dst_ip(dst_ip) -> Ipv4;
+    );
+    setters!(
+        pub set_src_mac(Mac) -> src_mac;
+        pub set_src_ip(Ipv4) -> src_ip;
+        pub set_dst_mac(Mac) -> dst_mac;
+        pub set_dst_ip(Ipv4) -> dst_ip;
+    );
 }
 
 /// function for building to the exponent

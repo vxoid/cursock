@@ -1,4 +1,4 @@
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 use std::ffi::CString;
@@ -122,38 +122,26 @@ impl Socket {
     pub fn read_raw_packet_timeout(
         &self,
         buffer: &mut [u8],
-        timeout: Duration,
         debug: bool,
+        timeout: Duration,
     ) -> Result<(), CursedErrorHandle> {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let wrapper: Wrapper<Socket> = Wrapper::new(self);
-        let buffer: Wrapper<[u8]> = Wrapper::<[u8]>::new(buffer);
-        thread::spawn(move || {
-            let _ = tx.send(
-                wrapper
-                    .reference()
-                    .read_raw_packet(buffer.mut_reference(), debug),
-            );
-        });
-
-        let result: Result<(), CursedErrorHandle> = match rx.recv_timeout(timeout) {
-            Ok(result) => result,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                return Err(CursedErrorHandle::new(
-                    CursedError::TimeOut,
-                    format!("Receive timed out ({} secconds)", timeout.as_secs_f64()),
-                ))
-            }
-            Err(err) => {
-                return Err(CursedErrorHandle::new(
-                    CursedError::ThreadJoin,
-                    format!("Can\'t receive response due to \"{}\"", err.to_string()),
-                ))
-            }
-        };
-
-        result
+        match Self::read_timeout(Wrapper::new(self), Wrapper::new(buffer), debug, timeout) {
+            Some(result) => result,
+            None => return Err(
+                CursedErrorHandle::new(CursedError::TimeOut, String::from("socket read timed out!"))
+            ),
+        }
     }
+
+    timeout!{
+        read_timeout(
+            socket: Wrapper<Socket> => Wrapper::reference,
+            buffer: Wrapper<[u8]> => Wrapper::mut_reference,
+            debug: bool
+        ) -> Result<(), CursedErrorHandle>,
+        Self::read_raw_packet
+    }   
+
     pub fn get_src_ip(&self) -> &Ipv4 {
         &self.src_ip
     }
