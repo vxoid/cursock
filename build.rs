@@ -1,18 +1,18 @@
 macro_rules! link {
     ($library:tt for $arch:tt-windows to $out:expr) => {
         {
-            let path: String = format!("{}\\{}.lib", $out, stringify!($library));
+            let path: String = format!("{}/{}.lib", $out, stringify!($library));
 
-            copy_local!(concat!("lib\\windows\\", stringify!($arch), "\\", stringify!($library), ".lib") => path);
+            copy_local!(concat!("lib/windows/", stringify!($arch), "/", stringify!($library), ".lib") => path);
     
             println!("cargo:rustc-link-lib={}", stringify!($library));
         }
     };
     ($library:tt for $arch:tt-windows-gnu to $out:expr) => {
         {
-            let path: String = format!("{}\\lib{}.a", $out, stringify!($library));
+            let path: String = format!("{}/lib{}.a", $out, stringify!($library));
 
-            copy_local!(concat!("lib\\windows\\", stringify!($arch), "\\", stringify!($library), ".lib") => path);
+            copy_local!(concat!("lib/windows/", stringify!($arch), "/", stringify!($library), ".lib") => path);
     
             println!("cargo:rustc-link-lib={}", stringify!($library));
         }
@@ -76,11 +76,6 @@ fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
         "linux" => {
             println!("cargo:rustc-link-search={}", out);
             
-            // match arch {
-            //     "x86_64" => link!(cursock for x64-linux to out),
-            //     "i686" => link!(cursock for x86-linux to out),
-            //     "aarch64" => link!(cursock for arm-linux to out)
-            // }
             link!(cursock for (arch, linux) to out)
         }
         "windows" => {
