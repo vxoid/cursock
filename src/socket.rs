@@ -13,7 +13,7 @@ use crate::*;
 /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
 /// #[cfg(target_os = "windows")]
 /// let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-/// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
+/// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
 ///
 /// let buffer: [u8; 1024] = [0; 1024];
 ///
@@ -41,7 +41,7 @@ impl Socket {
     /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
     /// #[cfg(target_os = "windows")]
     /// let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-    /// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
+    /// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
         #[cfg(target_os = "linux")]

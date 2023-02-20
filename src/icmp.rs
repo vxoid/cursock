@@ -34,7 +34,7 @@ impl Icmp {
     /// let icmp: Icmp = Icmp::new("eth0", true).expect("init error");
     /// #[cfg(target_os = "windows")]
     /// let icmp: Icmp = Icmp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("init error");
-    /// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
+    /// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
         let socket: Socket = match Socket::new(interface, debug) {
