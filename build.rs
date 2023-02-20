@@ -68,7 +68,7 @@ fn main() {
 
 fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
     match arch {
-        "x86_64" | "x86" | "aarch64" => {},
+        "x86_64" | "x86" | "aarch64" | "arm" => {},
         _ => panic!("{} arch isn\'t supported", arch)           
     }
     
