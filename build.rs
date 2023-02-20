@@ -30,8 +30,8 @@ macro_rules! link {
         {
             match $arch {
                 "x86_64" => link!($library for x64-$os$(-$abi)? to $out),
-                "i686" => link!($library for x86-$os$(-$abi)? to $out),
-                "aarch64" => link!($library for arm64-$os$(-$abi)? to $out),
+                "x86" => link!($library for x86-$os$(-$abi)? to $out),
+                "aarch64" | "arm" => link!($library for arm64-$os$(-$abi)? to $out),
                 _ => {}
             }
         }
@@ -58,7 +58,7 @@ fn main() {
         std::env::consts::OS,
         target_arch,
         target_os,
-        target_abi
+        target_abi,
     );
 
     let out_dir: String = std::env::var("OUT_DIR").expect("Can\'t get out dir");
@@ -68,7 +68,7 @@ fn main() {
 
 fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
     match arch {
-        "x86_64" | "i686" | "aarch64" => {},
+        "x86_64" | "x86" | "aarch64" => {},
         _ => panic!("{} arch isn\'t supported", arch)           
     }
     
@@ -76,7 +76,7 @@ fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
         "linux" => {
             println!("cargo:rustc-link-search={}", out);
             
-            link!(cursock for (arch, linux) to out)
+            // link!(cursock for (arch, linux) to out)
         }
         "windows" => {
             println!("cargo:rustc-link-lib=iphlpapi:iphlpapi");
