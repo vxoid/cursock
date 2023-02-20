@@ -12,7 +12,7 @@ Crate for raw socketing, can send raw packets and some protocols
 - [x] docs.rs - https://docs.rs/cursock
 - [x] github - https://github.com/CURVoid/cursock.git
 
-## Examples
+## Example
 ```rust
 #[cfg(target_os = "linux")]
 let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux

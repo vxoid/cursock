@@ -2,6 +2,20 @@ use std::time::Duration;
 
 use crate::*;
 
+/// arp protocol implementation
+/// 
+/// # Examples
+/// ```
+/// use cursock::*;
+/// let arp: Arp = Arp::new("eth0", true).expect("init error");
+/// 
+/// let target: Ipv4 = Handle::from([192, 168, 0, 1]);
+/// arp.who_has(&target, true).expect("who has error");
+/// 
+/// let response: ArpResponse = arp.read_arp(true).expect("read error");
+/// 
+/// arp.destroy();
+/// ```
 pub struct Arp {
     socket: Socket,
 }

@@ -1,0 +1,15 @@
+EXPORTS
+WintunAllocateSendPacket
+WintunCloseAdapter
+WintunCreateAdapter
+WintunDeleteDriver
+WintunEndSession
+WintunGetAdapterLUID
+WintunGetReadWaitEvent
+WintunGetRunningDriverVersion
+WintunOpenAdapter
+WintunReceivePacket
+WintunReleaseReceivePacket
+WintunSendPacket
+WintunSetLogger
+WintunStartSession

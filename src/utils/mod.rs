@@ -1,28 +1,4 @@
-#[macro_export]
-macro_rules! getters {
-    (
-        $($vis:vis $fn:ident($field:ident) -> $type:ty;)*
-    ) => {
-        $(
-            $vis fn $fn(&self) -> &$type {
-                &self.$field
-            }
-        )*
-    };
-}
-
-#[macro_export]
-macro_rules! setters {
-    (
-        $($vis:vis $fn:ident($type:ty) -> $field:ident;)*
-    ) => {
-        $(
-            $vis fn $fn(&mut self, value: $type) {
-                self.$field = value
-            }
-        )*
-    };
-}
+use crate::*;
 
 #[macro_export]
 macro_rules! callback {

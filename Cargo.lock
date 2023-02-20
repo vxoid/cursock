@@ -9,8 +9,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36c5d1c6c8dfdd8161142b64736ed592cc640bd4e4f03c451277a4a29622e704"
 
 [[package]]
+name = "curmacro"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a39e86818b1ed6dc079810f8341064c71fa5fe84801c6993a029d14bfa7ea504"
+
+[[package]]
 name = "cursock"
 version = "1.2.0"
 dependencies = [
  "curerr",
+ "curmacro",
 ]

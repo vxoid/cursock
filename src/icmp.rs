@@ -1,11 +1,41 @@
 use crate::*;
 use std::time::Duration;
 
+/// icmp protocol implementation
+/// 
+/// # Examples
+/// ```
+/// use cursock::*;
+/// 
+/// let icmp: Icmp = Icmp::new("eth0", true).expect("init error");
+/// 
+/// let gateway: Mac = Handle::from([0xff; 6]);
+/// let dst: Ipv4 = Handle::from([8; 4]);
+/// let message: [u8; 255] = [23; 255];
+/// icmp.echo(&dst, &gateway, &message, true).expect("echo error");
+/// 
+/// let mut buffer: [u8; 65535] = [0; 65535];
+/// let _ = icmp.read(&mut buffer, true).expect("read error");
+/// 
+/// icmp.destroy();
+/// ```
 pub struct Icmp {
    socket: Socket 
 }
 
 impl Icmp {
+    /// initializes icmp struct
+    /// 
+    /// # Examples
+    /// ```
+    /// use cursock::*;
+    /// 
+    /// #[cfg(target_os = "linux")]
+    /// let icmp: Icmp = Icmp::new("eth0", true).expect("init error");
+    /// #[cfg(target_os = "windows")]
+    /// let icmp: Icmp = Icmp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("init error");
+    /// // Since windows socket implementation is using npcap you should pass "npcap-like" interface
+    /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
         let socket: Socket = match Socket::new(interface, debug) {
             Ok(socket) => socket,
@@ -15,6 +45,20 @@ impl Icmp {
         Ok(Self { socket })
     }
 
+    /// sends icmp echo request
+    /// 
+    /// # Examples
+    /// ```
+    /// use cursock::*;
+    /// 
+    /// let icmp: Icmp = Icmp::new("wlan0", true).expect("init error");
+    /// 
+    /// let gateway: Mac = Handle::from([0xff; 6]);
+    /// let dst: Ipv4 = Handle::from([8; 4]);
+    /// let message: [u8; 255] = [23; 255];
+    /// 
+    /// icmp.echo(&dst, &gateway, &message, true).expect("echo error");
+    /// ```
     pub fn echo(&self, dst_ip: &Ipv4, gateway_mac: &Mac, message: &[u8], debug: bool) -> Result<(), CursedErrorHandle> {
         let buffer_len: usize = ETH_HEADER_SIZE+IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len();
         let mut buffer: Vec<u8> = vec![0; ETH_HEADER_SIZE+IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()];
@@ -72,6 +116,16 @@ impl Icmp {
         self.socket.send_raw_packet(&buffer, debug)
     }
 
+    /// reads for incomming icmp packet
+    /// # Examples
+    /// ```
+    /// use cursock::*;
+    /// 
+    /// let icmp: Icmp = Icmp::new("wlan0", true).expect("init error");
+    /// 
+    /// let mut buffer: [u8; 65535] = [0; 65535];
+    /// let _ = icmp.read(&mut buffer, true).expect("read error");
+    /// ```
     pub fn read(&self, buffer: &mut [u8], debug: bool) -> Result<(IpData, IcmpData), CursedErrorHandle> {
         let eth_header: &EthHeader = unsafe {
             &*(buffer.as_ptr() as *const EthHeader)
@@ -109,6 +163,18 @@ impl Icmp {
         }
     }
 
+    /// reads for incomming icmp packet with timeout
+    /// 
+    /// # Examples
+    /// ```
+    /// use cursock::*;
+    /// use std::time::Duration;
+    /// 
+    /// let icmp: Icmp = Icmp::new("wlan0", true).expect("init error");
+    /// 
+    /// let mut buffer: [u8; 65535] = [0; 65535];
+    /// let _ = icmp.read_timeout(&mut buffer, true, Duration::from_millis(500)).expect("read error");
+    /// ```
     pub fn read_timeout(&self, buffer: &mut [u8], debug: bool, timeout: Duration) -> Result<(IpData, IcmpData), CursedErrorHandle> {
         match Self::read_with_timeout(Wrapper::new(self), Wrapper::new(buffer), debug, timeout) {
             Some(result) => result,
@@ -127,6 +193,16 @@ impl Icmp {
         Self::read
     }
 
+    /// destructor for icmp struct
+    /// 
+    /// # Examples
+    /// ```
+    /// use cursock::*;
+    /// 
+    /// let icmp: Icmp = Icmp::new("wlan0", true).expect("init error");
+    /// 
+    /// icmp.destroy()
+    /// ```
     pub fn destroy(&self) {
         self.socket.destroy()
     }

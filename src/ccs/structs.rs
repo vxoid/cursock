@@ -321,3 +321,12 @@ pub struct IP_ADDRESS_STRING {
 pub struct IP_MASK_STRING {
     pub string: [i8; 16],
 }
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct _GUID {
+    pub data1: u32,
+    pub data2: u16,
+    pub data3: u16,
+    pub data4: [u8; 8],
+}

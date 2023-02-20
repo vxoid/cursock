@@ -26,8 +26,10 @@ extern "C" {
         dest_addr: *const sockaddr,
         addrlen: SocklenT,
     ) -> isize;
+    pub fn read(fd: i32, buf: *mut std::os::raw::c_void, count: usize) -> isize;
     pub fn bind(sockfd: i32, addr: *const sockaddr, addrlen: SocklenT) -> i32;
     pub fn socket(domain: i32, type_: i32, protocol: i32) -> i32;
+    pub fn open(pathname: *const i8, flags: i32) -> i32;
     pub fn ioctl(fd: i32, request: u64, ...) -> i32;
     pub fn perror(str: *const i8);
     pub fn close(fd: i32) -> i32;
@@ -60,6 +62,23 @@ extern "C" {
     pub fn pcap_inject(_: *mut pcap, _: *const std::os::raw::c_void, _: usize) -> i32;
     pub fn pcap_sendpacket(_: *mut pcap, _: *const u8, _: i32) -> i32;
     pub fn pcap_geterr(_: *mut pcap) -> *mut i8;
+}
+
+#[cfg(target_os = "windows")]
+pub type WintunAdapterHandle = *mut std::os::raw::c_void;
+#[cfg(target_os = "windows")]
+pub type WintunSessionHandle = *mut std::os::raw::c_void;
+#[cfg(target_os = "windows")]
+pub type GUID = _GUID;
+
+#[link(name = "wintun")]
+#[cfg(target_os = "windows")]
+extern "C" {
+    pub fn WintunCreateAdapter(name: *const u16, tunnel_type: *const u16, requested_GUID: *const GUID) -> WintunAdapterHandle;
+    pub fn WintunStartSession(adapter: WintunAdapterHandle, _: u32) -> WintunSessionHandle;
+    pub fn WintunAllocateSendPacket(session: WintunSessionHandle, size: u32) -> *mut u8;
+    pub fn WintunReceivePacket(session: WintunSessionHandle, size: *mut u32) -> *mut u8;
+    pub fn WintunSendPacket(session: WintunSessionHandle, packet: *mut u8);
 }
 
 pub const fn null<T>() -> *const T {
