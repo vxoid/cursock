@@ -76,7 +76,7 @@ fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
         "linux" => {
             println!("cargo:rustc-link-search={}", out);
             
-            // link!(cursock for (arch, linux) to out)
+            link!(cursock for (arch, linux) to out)
         }
         "windows" => {
             println!("cargo:rustc-link-lib=iphlpapi:iphlpapi");
