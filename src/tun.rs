@@ -217,6 +217,32 @@ impl Tun {
     
     #[cfg(target_os = "linux")]
     fn create_linux(interface: &str, routes: &[&Ipv4], debug: bool) -> Result<Self, CursedErrorHandle> {
+        let interface_create_query: String = format!("-c ip tuntap add mode tun dev \"{}\"", interface);
+        let route_add_128_query: String = format!("-c ip route add 128/1 dev \"{}\"", interface);
+        let route_add_0_query: String = format!("-c ip route add 0/1 dev \"{}\"", interface);
+        let addr_add_query: String = format!("-c ip addr add 128.0.0.0/1 dev \"{}\"", interface);
+        let set_up_query: String = format!("-c ip link set dev \"{}\" up", interface);
+        
+        let sysctl_query: String = "-c sysctl -w net.ipv4.ip_forward=1".to_string();
+        let postrouting_query: String = format!("iptables -t nat -A POSTROUTING -o \"{}\" -j MASQUERADE", interface);
+        let forwarding_query: String = format!("iptables -I FORWARD 1 -i \"{}\" -m state --state RELATED,ESTABLISHED -j ACCEPT", interface);
+        let accept_forwarding_query: String = format!("iptables -I FORWARD 1 -o \"{}\" -j ACCEPT", interface);
+
+        const QUERIES_SIZE: usize = 9;
+        let queries: [&str; QUERIES_SIZE] = [
+            &interface_create_query,
+            &route_add_128_query,
+            &route_add_0_query,
+            &addr_add_query,
+            &set_up_query,
+            &sysctl_query,
+            &postrouting_query,
+            &forwarding_query,
+            &accept_forwarding_query
+        ];
+
+        run_queries(&queries, "sh")?;
+
         for route in routes {
             let interface_get_query: String = format!("-c ip route show 0/0 | sed -e 's/.* via ([^ ]*).*/{}/\'", 1 as char);
             let interface: String = match std::process::Command::new("sh").arg(interface_get_query).output() {
@@ -242,32 +268,6 @@ impl Tun {
                 );
             }
         }
-
-        let interface_create_query: String = format!("-c ip tuntap add mode tun dev \"{}\"", interface);
-        let route_add_128_query: String = format!("-c ip route add 128/1 dev \"{}\"", interface);
-        let route_add_0_query: String = format!("-c ip route add 0/1 dev \"{}\"", interface);
-        let addr_add_query: String = format!("-c ip addr add 128.0.0.0/1 dev \"{}\"", interface);
-        let set_up_query: String = format!("-c ip link set dev \"{}\" up", interface);
-        
-        let sysctl_query: String = "-c sysctl -w net.ipv4.ip_forward=1".to_string();
-        let postrouting_query: String = format!("iptables -t nat -A POSTROUTING -o \"{}\" -j MASQUERADE", interface);
-        let forwarding_query: String = format!("iptables -I FORWARD 1 -i \"{}\" -m state --state RELATED,ESTABLISHED -j ACCEPT", interface);
-        let accept_forwarding_query: String = format!("iptables -I FORWARD 1 -o \"{}\" -j ACCEPT", interface);
-
-        const QUERIES_SIZE: usize = 9;
-        let queries: [&str; QUERIES_SIZE] = [
-            &interface_create_query,
-            &route_add_128_query,
-            &route_add_0_query,
-            &addr_add_query,
-            &set_up_query,
-            &sysctl_query,
-            &postrouting_query,
-            &forwarding_query,
-            &accept_forwarding_query
-        ];
-
-        run_queries(&queries, "sh");
 
         Self::open(interface, debug)
     }
