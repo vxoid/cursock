@@ -1,4 +1,6 @@
 use crate::*;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use std::ffi::CString;
 
 use std::{
     process::Command,
@@ -888,4 +890,129 @@ pub fn get_interface_info(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHan
     };
 
     Ok(adapter_info)
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_interface_info(
+    socket: i32,
+    interface: &str,
+    debug: bool,
+) -> Result<(Ipv4, Mac, i32), CursedErrorHandle> {
+    let interface: CString = match CString::new(interface) {
+        Ok(interface) => interface,
+        Err(err) => {
+            return Err(CursedErrorHandle::new(
+                CursedError::Parse,
+                format!(
+                    "{} is not valid c string can\'t convert it due to {}",
+                    interface,
+                    err.to_string()
+                ),
+            ))
+        }
+    };
+    
+    let ifru: ccs::ifreq_data = ccs::ifreq_data { ifru_ifindex: 0 };
+    let mut if_request: ccs::ifreq = ccs::ifreq {
+        ifr_name: [0; 16],
+        ifr_ifru: ifru,
+    };
+
+    memcpy(
+        if_request.ifr_name.as_mut_ptr(),
+        interface.as_ptr(),
+        interface.as_bytes_with_nul().len(),
+    );
+
+    let index: i32 = match get_interface_index(socket, &mut if_request, debug) {
+        Ok(ifindex) => ifindex,
+        Err(err) => return Err(err),
+    };
+
+    let ip: Ipv4 = match get_interface_ip(socket, &mut if_request, debug) {
+        Ok(ip) => ip,
+        Err(err) => return Err(err),
+    };
+
+    let mac: Mac = match get_interface_mac(socket, &mut if_request, debug) {
+        Ok(mac) => mac,
+        Err(err) => return Err(err),
+    };
+
+    Ok((ip, mac, index))
+}
+
+#[cfg(target_os = "linux")]
+fn get_interface_index(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<i32, CursedErrorHandle> {
+    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFINDEX, ifr) };
+
+    if err == -1 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            String::from("Got error while getting SIOCGIFINDEX"),
+        ));
+    }
+
+    let index: i32 = unsafe { (*ifr).ifr_ifru.ifru_ifindex.clone() };
+
+    Ok(index)
+}
+
+#[cfg(target_os = "linux")]
+fn get_interface_ip(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv4, CursedErrorHandle> {
+    let err: i32;
+
+    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+
+    if err == -1 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            String::from("Got error while getting SIOCGIFADDR"),
+        ));
+    }
+
+    let addr: *const ccs::sockaddr_in =
+        unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
+    let mut ip: [u8; IPV4_LEN] = [0; IPV4_LEN];
+
+    memcpy(
+        ip.as_mut_ptr(),
+        unsafe { &(*addr).sin_addr.s_addr },
+        std::mem::size_of::<[u8; IPV4_LEN]>(),
+    );
+
+    Ok(Handle::from(ip))
+}
+
+#[cfg(target_os = "linux")]
+fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Mac, CursedErrorHandle> {
+    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFHWADDR, ifr) };
+
+    if err == -1 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            String::from("Got error while getting SIOCGIFHWADDR"),
+        ));
+    }
+
+    let sa_data: [i8; 14] = unsafe { (*ifr).ifr_ifru.ifru_hwaddr.sa_data };
+
+    let mut mac: [u8; MAC_LEN] = [0; MAC_LEN];
+
+    memcpy(
+        mac.as_mut_ptr(),
+        sa_data.as_ptr(),
+        std::mem::size_of::<[u8; MAC_LEN]>(),
+    );
+
+    Ok(Handle::from(mac))
 }

@@ -116,6 +116,26 @@ impl Tun {
 
     #[cfg(target_os = "linux")]
     fn open_linux(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
+        let socket: i32 = unsafe {
+            ccs::socket(
+                ccs::AF_PACKET,
+                ccs::SOCK_RAW,
+                (ccs::ETH_P_ALL as u16).to_be() as i32,
+            )
+        };
+
+        if socket < 0 {
+            if debug {
+                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+            }
+            return Err(CursedErrorHandle::new(
+                CursedError::Initialize,
+                format!("Can\'t initialize socket ({} < 0)", socket),
+            ));
+        }
+
+        let _ = get_interface_info(socket, interface, debug)?;
+        
         const TUN_PATH: &'static str = "/dev/net/tun";
 
         let path: CString = match CString::new(TUN_PATH) {
