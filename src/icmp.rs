@@ -75,10 +75,10 @@ impl Icmp {
 
         eth_header.source = self.socket.get_src_mac().to();
         eth_header.dest = gateway_mac.to();
-        eth_header.proto = ccs::htons(IP_PROTO);
+        eth_header.proto = (IP_PROTO as u16).to_be();
 
         ip_header.verihl = (4 << 4) + 5; // 4 - ip version - 5 header len (20)
-        ip_header.tot_len = ccs::htons((IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()) as u16);
+        ip_header.tot_len = ((IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()) as u16).to_be();
         ip_header.ttl = 128;
         ip_header.protocol = ICMP_PROTO as u8;
         ip_header.saddr = self.socket.get_src_ip().to();
@@ -93,12 +93,12 @@ impl Icmp {
             buffer[i] = message[i-message_start].clone()
         }
 
-        let icmp_checksum: u16 = Self::checksum(
+        let icmp_checksum: u16 = checksum(
             icmp_header as *const IcmpHeader as *const u8,
             buffer_len - (ETH_HEADER_SIZE + IP_HEADER_SIZE)
         );
 
-        let ip_checksum: u16 = Self::checksum(
+        let ip_checksum: u16 = checksum(
             ip_header as *const IpHeader as *const u8,
             IP_HEADER_SIZE
         );
@@ -142,7 +142,7 @@ impl Icmp {
                 return Err(err);
             }
         
-            if eth_header.proto != ccs::htons(IP_PROTO) || ip_header.protocol != ICMP_PROTO as u8 {
+            if eth_header.proto != (IP_PROTO as u16).to_be() || ip_header.protocol != ICMP_PROTO as u8 {
                 continue
             }
 
@@ -191,46 +191,5 @@ impl Icmp {
             debug: bool
         ) -> Result<(IpData, IcmpData), CursedErrorHandle>,
         Self::read
-    }
-
-    /// destructor for icmp struct
-    /// 
-    /// # Examples
-    /// ```
-    /// use cursock::*;
-    /// 
-    /// let icmp: Icmp = Icmp::new("wlan0", true).expect("init error");
-    /// 
-    /// icmp.destroy()
-    /// ```
-    pub fn destroy(&self) {
-        self.socket.destroy()
-    }
-
-    fn checksum(header: *const u8, len: usize) -> u16 {
-        let mut sum: i32 = 0;
-        let mut left: usize = len;
-        let words: *const u16 = header as *const u16; 
-
-        let mut i: usize = 0;
-        while left > 1 {
-            sum += unsafe {
-                *((words as usize + i) as *const u16)
-            } as i32;
-
-            left -= 2;
-            i += 2
-        }
-
-        if left == 1 {            
-            sum += unsafe {
-                *((words as usize + i - 1) as *const u8)
-            } as i32;
-        }
-
-        sum = (sum >> 16) + (sum & 0xffff); 
-        sum += sum >> 16;
-
-        (!sum) as u16
     }
 }

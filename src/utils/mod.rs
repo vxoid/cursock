@@ -1,5 +1,13 @@
 use crate::*;
 
+use std::{
+    process::Command,
+    time::{
+        Duration,
+        SystemTimeError,
+    }
+};
+
 #[macro_export]
 macro_rules! callback {
     ($arg: expr) => {
@@ -30,6 +38,22 @@ macro_rules! timeout {
             };
             
             Some(result)
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! ipv4 {
+    (($o1:expr).($o2:expr).($o3:expr).($o4:expr)) => {
+        {
+            let ipv4: Ipv4 = Handle::from([$o1, $o2, $o3, $o4]);
+            ipv4
+        }
+    };
+    ($o1:literal.$o2:literal.$o3:literal.$o4:literal) => {
+        {
+            let ipv4: Ipv4 = Handle::from([$o1, $o2, $o3, $o4]);
+            ipv4
         }
     }
 }
@@ -713,4 +737,155 @@ pub fn str_from_cstr(cstr: *const i8) -> String {
     }
 
     string
+}
+
+pub fn str_from_cutf16(str: *const u16) -> String {
+
+    let mut message: String = String::new();
+    let mut i: usize = 0;
+
+    loop {
+        let value: u16 = unsafe {
+            *((str as usize + i) as *const u16)
+        };
+        if value == 0 {
+            break;
+        }
+
+        message.push(value as u8 as char);
+        i += 1;
+    }
+
+    message
+}
+
+pub type RandomNumber = u128;
+pub fn random_with_seed(seed: RandomNumber) -> RandomNumber {
+    const SEED_OFFSET: u8 = 8;
+
+    const MULTIPLIER: u128 = 9;
+    const ADDER: u128 = 5;
+    let mut seed: RandomNumber = seed;
+    let mut result: RandomNumber = 0;
+    let mut i: usize = 0;
+    
+    loop {
+        if (i*SEED_OFFSET as usize) >= RandomNumber::BITS as usize {
+            break
+        }
+
+        seed = ((seed*MULTIPLIER)+ADDER)%power(2f64, SEED_OFFSET as u16) as u128;
+        result += seed << 8*i;
+
+        i += 1;
+    }
+
+    !result
+}
+
+pub fn random_in_range(min: RandomNumber, max: RandomNumber) -> Result<RandomNumber, SystemTimeError> {
+    let unix_epoch: Duration = std::time::UNIX_EPOCH.elapsed()?;
+    Ok((random_with_seed(unix_epoch.as_nanos() as RandomNumber)%(max-min))+min)
+}
+
+pub fn checksum(header: *const u8, len: usize) -> u16 {
+    let mut sum: i32 = 0;
+    let mut left: usize = len;
+    let words: *const u16 = header as *const u16; 
+
+    let mut i: usize = 0;
+    while left > 1 {
+        sum += unsafe {
+            *((words as usize + i) as *const u16)
+        } as i32;
+
+        left -= 2;
+        i += 2
+    }
+
+    if left == 1 {            
+        sum += unsafe {
+            *((words as usize + i - 1) as *const u8)
+        } as i32;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff); 
+    sum += sum >> 16;
+
+    (!sum) as u16
+}
+
+pub fn run_queries(queries: &[&str], program: &str) -> Result<(), CursedErrorHandle> {
+    for query in queries {
+        if let Err(err) = Command::new(program).arg(query).output() {
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::Sockets,
+                    format!("can\'t run command due to \"{}\"", err.to_string())
+                )
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_interface_info(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHandle> {
+    let mut size: u32 = 0;
+
+    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
+
+    let mut buffer: Vec<u8> = vec![0; size as usize];
+    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
+        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
+    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
+
+    if result != 0 {
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            format!("Got {} error while getting adapters info", result),
+        ));
+    }
+
+    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
+    let mut adapter_info: Option<(Ipv4, Mac, u32)> = None;
+
+    loop {
+        if adapter as usize == 0 {
+            break;
+        }
+        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
+
+        if guid == &str_from_cstr(adapter_ref.adaptername.as_ptr())[..] {
+            let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
+            memcpy(
+                mac_addr.as_mut_ptr(),
+                adapter_ref.address.as_ptr(),
+                std::mem::size_of::<[u8; MAC_LEN]>(),
+            );
+
+            let mut ip_addr: [u8; IPV4_LEN] = [0; IPV4_LEN];
+            memcpy(
+                &mut ip_addr,
+                &adapter_ref.ipaddresslist.context,
+                std::mem::size_of::<[u8; IPV4_LEN]>(),
+            );
+
+            adapter_info = Some((Handle::from(ip_addr), Handle::from(mac_addr), adapter_ref.index))
+        }
+
+        adapter = adapter_ref.next
+    }
+    let adapter_info: (Ipv4, Mac, u32) = match adapter_info {
+        Some(adapter_info) => adapter_info,
+        None => {
+            return Err(CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("{} is not valid adapter name", guid),
+            ))
+        }
+    };
+
+    Ok(adapter_info)
 }

@@ -148,14 +148,7 @@ impl Socket {
     pub fn get_src_mac(&self) -> &Mac {
         &self.src_mac
     }
-    /// Destroys socket structure
-    ///
-    /// # Examples
-    /// ```
-    /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error");
-    /// socket.destroy()
-    /// ```
-    pub fn destroy(&self) {
+    fn destroy(&self) {
         #[cfg(target_os = "linux")]
         {
             self.destroy_linux()
@@ -181,7 +174,7 @@ impl Socket {
             ccs::socket(
                 ccs::AF_PACKET,
                 ccs::SOCK_RAW,
-                ccs::htons(ccs::ETH_P_ALL as u16) as i32,
+                (ccs::ETH_P_ALL as u16).to_be() as i32,
             )
         };
 
@@ -220,7 +213,7 @@ impl Socket {
     }
     #[cfg(target_os = "windows")]
     fn new_windows(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let (src_ip, src_mac): (Ipv4, Mac) = match get_interface_info(interface) {
+        let (src_ip, src_mac, _): (Ipv4, Mac, u32) = match get_interface_info(interface) {
             Ok(info) => info,
             Err(err) => return Err(err),
         };
@@ -316,15 +309,11 @@ impl Socket {
         let mut header: *mut ccs::pcap_pkthdr = ccs::null_mut();
         let mut pkt_data: *const u8 = ccs::null();
 
-        let result: i32 = unsafe {
-            ccs::pcap_next_ex(self.adapter as *mut ccs::pcap, &mut header, &mut pkt_data)
-        };
-
-        if result == 0 {
-            return Err(CursedErrorHandle::new(
-                CursedError::TimeOut,
-                String::from("reading raw packet timed out"),
-            ));
+        let mut result: i32 = 0;
+        while result == 0 {
+            result = unsafe {
+                ccs::pcap_next_ex(self.adapter as *mut ccs::pcap, &mut header, &mut pkt_data)
+            };
         }
 
         let header: &mut ccs::pcap_pkthdr = unsafe { &mut *header };
@@ -531,62 +520,8 @@ fn get_if_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Mac, Cur
     Ok(Handle::from(mac))
 }
 
-#[cfg(target_os = "windows")]
-fn get_interface_info(adapter_name: &str) -> Result<(Ipv4, Mac), CursedErrorHandle> {
-    let mut size: u32 = 0;
-
-    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
-
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
-        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
-    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
-
-    if result != 0 {
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            format!("Got {} error while getting adapters info", result),
-        ));
+impl Drop for Socket {
+    fn drop(&mut self) {
+        self.destroy()
     }
-
-    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
-    let mut adapter_info: Option<(Ipv4, Mac)> = None;
-
-    loop {
-        if adapter as usize == 0 {
-            break;
-        }
-        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
-
-        if adapter_name == &str_from_cstr(adapter_ref.adaptername.as_ptr())[..] {
-            let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
-            memcpy(
-                mac_addr.as_mut_ptr(),
-                adapter_ref.address.as_ptr(),
-                std::mem::size_of::<[u8; MAC_LEN]>(),
-            );
-
-            let mut ip_addr: [u8; IPV4_LEN] = [0; IPV4_LEN];
-            memcpy(
-                &mut ip_addr,
-                &adapter_ref.ipaddresslist.context,
-                std::mem::size_of::<[u8; IPV4_LEN]>(),
-            );
-
-            adapter_info = Some((Handle::from(ip_addr), Handle::from(mac_addr)))
-        }
-
-        adapter = adapter_ref.next
-    }
-    let adapter_info: (Ipv4, Mac) = match adapter_info {
-        Some(adapter_info) => adapter_info,
-        None => {
-            return Err(CursedErrorHandle::new(
-                CursedError::InvalidArgument,
-                format!("{} is not valid adapter name", adapter_name),
-            ))
-        }
-    };
-
-    Ok(adapter_info)
 }

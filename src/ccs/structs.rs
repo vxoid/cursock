@@ -1,3 +1,5 @@
+#![allow(non_camel_case_types)]
+
 #[cfg(target_os = "windows")]
 use super::consts::*;
 
@@ -58,7 +60,7 @@ pub struct in_addr {
 pub union S_un {
     pub s_un_b: S_un_b,
     pub s_un_w: S_un_w,
-    pub s_addr: u32,
+    pub s_addr: [u8; 4],
 }
 
 #[cfg(target_os = "windows")]
@@ -328,5 +330,29 @@ pub struct _GUID {
     pub data1: u32,
     pub data2: u16,
     pub data3: u16,
-    pub data4: [u8; 8],
+    pub data4: u64,
+}
+
+#[cfg(target_os = "windows")]
+impl std::fmt::Display for _GUID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{{:08X}-{:04X}-{:04X}-{:04X}-{:012X}}}", self.data1, self.data2, self.data3, (self.data4 << 48).to_be(), (self.data4.to_be() << 16) >> 16)
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct MIB_UNICASTIPADDRESS_ROW {
+    pub address: sockaddr_in,
+    pub luid: u64,
+    pub index: u32,
+    pub prefix_origin: i32,
+    pub suffix_origin: i32,
+    pub valid_lifetime: u32,
+    pub preferred_lifetime: u32,
+    pub on_link_prefix_length: u8,
+    pub skip_as_source: u8,
+    pub dad_state: i32,
+    pub scope_id: u32,
+    pub timestamp: i64
 }

@@ -1,13 +1,22 @@
-# Cursock
+# Cursock v1.2.4
 Crate for raw socketing, can send raw packets and some protocols
 
 ## Protocols
 - [x] Arp
 - [x] Icmp
 
+## Other
+- [x] Tun device manager
+
 ## Platforms
-- [x] Windows (npcap)
+- [x] Windows (npcap, wintun)
 - [x] Linux
+
+## Update Logs
+- Added more cross-compilation options for cpu architecture
+- Added tun device manager
+- Automated destruction, made destruct methods private to avoid memory leaks from user
+- Fixed raw socket read timeout error
 
 ## Links
 - [x] docs.rs - https://docs.rs/cursock

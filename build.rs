@@ -5,7 +5,7 @@ macro_rules! link {
 
             copy_local!(concat!("lib/windows/", stringify!($arch), "/", stringify!($library), ".lib") => path);
     
-            println!("cargo:rustc-link-lib={}", stringify!($library));
+            println!("cargo:rustc-link-lib=static={}", stringify!($library));
         }
     };
     ($library:tt for $arch:tt-windows-gnu to $out:expr) => {
@@ -14,7 +14,7 @@ macro_rules! link {
 
             copy_local!(concat!("lib/windows/", stringify!($arch), "/", stringify!($library), ".lib") => path);
     
-            println!("cargo:rustc-link-lib={}", stringify!($library));
+            println!("cargo:rustc-link-lib=static={}", stringify!($library));
         }
     };
     ($library:tt for $arch:tt-linux to $out:expr) => {
@@ -23,7 +23,7 @@ macro_rules! link {
 
             copy_local!(concat!("lib/linux/", stringify!($arch), "/lib", stringify!($library), ".a") => path);
     
-            println!("cargo:rustc-link-lib={}", stringify!($library));
+            println!("cargo:rustc-link-lib=static={}", stringify!($library));
         }
     };
     ($library:tt for ($arch:expr, $os:tt$(-$abi:tt)?) to $out:expr) => {
@@ -79,17 +79,20 @@ fn link_for(os: &str, arch: &str, abi: &str, out: &str) {
             link!(cursock for (arch, linux) to out)
         }
         "windows" => {
-            println!("cargo:rustc-link-lib=iphlpapi:iphlpapi");
             println!("cargo:rustc-link-search={}", out);
 
             match abi {
                 "msvc" => {
                     link!(wpcap for (arch, windows) to out);
                     link!(wintun for (arch, windows) to out);
+                    link!(kernel32 for (arch, windows) to out);
+                    link!(iphlpapi for (arch, windows) to out);
                 }
                 "gnu" => {
                     link!(wpcap for (arch, windows-gnu) to out);
                     link!(wintun for (arch, windows-gnu) to out);
+                    link!(kernel32 for (arch, windows-gnu) to out);
+                    link!(iphlpapi for (arch, windows-gnu) to out);
                 }
                 _ => {}
             }

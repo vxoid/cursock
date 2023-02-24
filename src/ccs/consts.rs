@@ -1,3 +1,5 @@
+#![allow(non_upper_case_globals)]
+
 #[cfg(target_os = "linux")]
 pub const AF_PACKET: i32 = 17;
 #[cfg(target_os = "linux")]
@@ -25,6 +27,30 @@ pub const IFF_TUN: i32 = 1;
 #[cfg(target_os = "linux")]
 pub const TUNSETIFF: i32 = 1074025674;
 #[cfg(target_os = "windows")]
+pub const ERROR_SUCCESS: u32 = 0;
+#[cfg(target_os = "windows")]
+pub const ERROR_OBJECT_ALREADY_EXISTS: u32 = 5010;
+#[cfg(target_os = "windows")]
+pub const IpDadStatePreferred: i32 = 4;
+#[cfg(target_os = "windows")]
+pub const AF_INET: i32 = 2;
+#[cfg(target_os = "windows")]
 pub const PCAP_OPENFLAG_PROMISCUOUS: i32 = 1;
 #[cfg(target_os = "windows")]
 pub type TimeT = i64; // Should be changed after 292 billion years
+#[cfg(target_os = "windows")]
+pub const WINTUN_LOG_INFO: i32 = 0;
+#[cfg(target_os = "windows")]
+pub const WINTUN_LOG_WARN: i32 = 1;
+#[cfg(target_os = "windows")]
+pub const WINTUN_LOG_ERR: i32 = 2;
+#[cfg(target_os = "windows")]
+pub const FORMAT_MESSAGE_FROM_SYSTEM: u32 = 0x00001000; 
+#[cfg(target_os = "windows")]
+pub const FORMAT_MESSAGE_ALLOCATE_BUFFER: u32 = 0x00000100;
+#[cfg(target_os = "windows")]
+pub const FORMAT_MESSAGE_MAX_WIDTH_MASK: u32 = 0x000000FF;
+#[cfg(target_os = "windows")]
+pub const FORMAT_MESSAGE_FROM_STRING: u32 = 0x00000400;
+#[cfg(target_os = "windows")]
+pub const FORMAT_MESSAGE_ARGUMENT_ARRAY: u32 = 0x00002000;

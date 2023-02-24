@@ -64,13 +64,13 @@ impl Arp {
         arp_header.target_mac = [0; MAC_LEN];
         arp_header.sender_mac = self.get_src_mac().to();
 
-        eth_header.proto = ccs::htons(ARP_PROTO);
+        eth_header.proto = (ARP_PROTO as u16).to_be();
 
-        arp_header.hardware_type = ccs::htons(HW_TYPE);
-        arp_header.protocol_type = ccs::htons(IP_PROTO);
+        arp_header.hardware_type = (HW_TYPE as u16).to_be();
+        arp_header.protocol_type = (IP_PROTO as u16).to_be();
         arp_header.hardware_len = MAC_LEN as u8;
         arp_header.protocol_len = IPV4_LEN as u8;
-        arp_header.opcode = ccs::htons(ARP_REQUEST);
+        arp_header.opcode = (ARP_REQUEST as u16).to_be();
 
         arp_header.sender_ip = self.get_src_ip().to();
         arp_header.target_ip = dst_ip.to();
@@ -118,13 +118,13 @@ impl Arp {
         arp_header.target_mac = dst_mac.to();
         arp_header.sender_mac = src_mac.to();
 
-        eth_header.proto = ccs::htons(ARP_PROTO);
+        eth_header.proto = (ARP_PROTO as u16).to_be();
 
-        arp_header.hardware_type = ccs::htons(HW_TYPE);
-        arp_header.protocol_type = ccs::htons(IP_PROTO);
+        arp_header.hardware_type = (HW_TYPE as u16).to_be();
+        arp_header.protocol_type = (IP_PROTO as u16).to_be();
         arp_header.hardware_len = MAC_LEN as u8;
         arp_header.protocol_len = IPV4_LEN as u8;
-        arp_header.opcode = ccs::htons(ARP_REPLY);
+        arp_header.opcode = (ARP_REPLY as u16).to_be();
 
         arp_header.sender_ip = src_ip.to();
         arp_header.target_ip = dst_ip.to();
@@ -169,8 +169,8 @@ impl Arp {
                 return Err(err);
             }
 
-            if ccs::ntohs(eth_header.proto) == ARP_PROTO
-                && ccs::ntohs(arp_header.opcode) == ARP_REPLY
+            if eth_header.proto == ARP_PROTO.to_be()
+                && arp_header.opcode == ARP_REPLY.to_be()
             {
                 if debug {
                     print!("Buffer: [ ");
@@ -226,17 +226,5 @@ impl Arp {
     }
     pub fn get_src_mac(&self) -> &Mac {
         self.socket.get_src_mac()
-    }
-    /// Destroys arp structure
-    ///
-    /// # Examples
-    /// ```
-    /// use cursock::*;
-    ///
-    /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error");
-    /// arp.destroy()
-    /// ```
-    pub fn destroy(&self) {
-        self.socket.destroy()
     }
 }

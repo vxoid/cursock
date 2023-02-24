@@ -7,7 +7,7 @@ pub use structs::*;
 #[cfg(target_os = "linux")]
 pub type SocklenT = u32;
 
-#[link(name = "cursock")]
+#[link(name = "cursock", kind = "static")]
 #[cfg(target_os = "linux")]
 extern "C" {
     pub fn recvfrom(
@@ -26,6 +26,7 @@ extern "C" {
         dest_addr: *const sockaddr,
         addrlen: SocklenT,
     ) -> isize;
+    pub fn write(fd: i32, buf: *const std::os::raw::c_void, count: usize) -> isize;
     pub fn read(fd: i32, buf: *mut std::os::raw::c_void, count: usize) -> isize;
     pub fn bind(sockfd: i32, addr: *const sockaddr, addrlen: SocklenT) -> i32;
     pub fn socket(domain: i32, type_: i32, protocol: i32) -> i32;
@@ -35,10 +36,12 @@ extern "C" {
     pub fn close(fd: i32) -> i32;
 }
 
-#[link(name = "iphlpapi")]
+#[link(name = "iphlpapi", kind = "static")]
 #[cfg(target_os = "windows")]
-extern "C" {
+extern "system" {
     pub fn GetAdaptersInfo(adapterinfo: *mut IP_ADAPTER_INFO, sizepointer: *mut u32) -> u32;
+    pub fn CreateUnicastIpAddressEntry(row: *const MIB_UNICASTIPADDRESS_ROW) -> u32;
+    pub fn InitializeUnicastIpAddressEntry(row: *mut MIB_UNICASTIPADDRESS_ROW);
 }
 
 #[link(name = "wpcap", kind = "static")]
@@ -70,15 +73,38 @@ pub type WintunAdapterHandle = *mut std::os::raw::c_void;
 pub type WintunSessionHandle = *mut std::os::raw::c_void;
 #[cfg(target_os = "windows")]
 pub type GUID = _GUID;
+#[cfg(target_os = "windows")]
+pub type LOGGER = Option<unsafe extern "C" fn(level: i32, timestamp: u64, message: *const u16)>;
 
-#[link(name = "wintun")]
+#[link(name = "wintun", kind = "static")]
 #[cfg(target_os = "windows")]
 extern "C" {
     pub fn WintunCreateAdapter(name: *const u16, tunnel_type: *const u16, requested_GUID: *const GUID) -> WintunAdapterHandle;
     pub fn WintunStartSession(adapter: WintunAdapterHandle, _: u32) -> WintunSessionHandle;
     pub fn WintunAllocateSendPacket(session: WintunSessionHandle, size: u32) -> *mut u8;
     pub fn WintunReceivePacket(session: WintunSessionHandle, size: *mut u32) -> *mut u8;
+    pub fn WintunReleaseReceivePacket(session: WintunSessionHandle, buffer: *const u8);
+    pub fn WintunGetAdapterLUID(adapter: WintunAdapterHandle, luid: *mut u64);
     pub fn WintunSendPacket(session: WintunSessionHandle, packet: *mut u8);
+    pub fn WintunOpenAdapter(name: *const u16) -> WintunAdapterHandle;
+    pub fn WintunCloseAdapter(adapter: WintunAdapterHandle);
+    pub fn WintunEndSession(session: WintunSessionHandle);
+    pub fn WintunSetLogger(logger: LOGGER);
+}
+
+#[link(name = "kernel32", kind = "static")]
+#[cfg(target_os = "windows")]
+extern "system" {
+    pub fn FormatMessageW(
+        flags: u32,
+        src: *const std::os::raw::c_void,
+        message_id: u32,
+        language_id: u32,
+        buffer: *mut u16,
+        size: u32,
+        args: *mut i8
+    ) -> u32;
+    pub fn GetLastError() -> u32;
 }
 
 pub const fn null<T>() -> *const T {
@@ -87,12 +113,4 @@ pub const fn null<T>() -> *const T {
 
 pub const fn null_mut<T>() -> *mut T {
     0 as *mut T
-}
-
-pub fn htons(u: u16) -> u16 {
-    u.to_be()
-}
-
-pub fn ntohs(u: u16) -> u16 {
-    u16::from_be(u)
 }
