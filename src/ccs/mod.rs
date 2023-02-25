@@ -31,7 +31,9 @@ extern "C" {
     pub fn bind(sockfd: i32, addr: *const sockaddr, addrlen: SocklenT) -> i32;
     pub fn socket(domain: i32, type_: i32, protocol: i32) -> i32;
     pub fn open(pathname: *const i8, flags: i32) -> i32;
+    pub fn getifaddrs(ifap: *mut *mut ifaddrs) -> i32;
     pub fn ioctl(fd: i32, request: u64, ...) -> i32;
+    pub fn freeifaddrs(ifa: *mut ifaddrs);
     pub fn perror(str: *const i8);
     pub fn close(fd: i32) -> i32;
 }

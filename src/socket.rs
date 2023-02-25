@@ -1,4 +1,6 @@
 use std::time::Duration;
+#[cfg(target_os = "windows")]
+use std::ffi::CString;
 
 use crate::*;
 

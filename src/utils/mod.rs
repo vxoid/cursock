@@ -1,5 +1,5 @@
 use crate::*;
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 
 use std::{
@@ -1015,4 +1015,132 @@ fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<M
     );
 
     Ok(Handle::from(mac))
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_interface_by_ip(addr: &Ipv4) -> Result<(String, u32), CursedErrorHandle> {
+    let mut size: u32 = 0;
+
+    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
+
+    let mut buffer: Vec<u8> = vec![0; size as usize];
+    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
+        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
+    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
+
+    if result != 0 {
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            format!("Got {} error while getting adapters info", result),
+        ));
+    }
+
+    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
+    let mut interface_info: Option<(String, u32)> = None;
+
+    'adapter: loop {
+        if adapter as usize == 0 {
+            break
+        }
+        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
+
+        let mut ip_string: *const ccs::IP_ADDR_STRING = &adapter_ref.ipaddresslist;
+        loop {
+            if ip_string as usize == 0 {
+                break
+            }
+            let ip_string_ref: &ccs::IP_ADDR_STRING = unsafe { &*ip_string };
+
+            let ip_addr: [u8; IPV4_LEN] = unsafe {
+                std::mem::transmute(ip_string_ref.context)
+            };
+            let addr: [u8; IPV4_LEN] = addr.to();
+
+            if addr == ip_addr {
+                let guid: String = str_from_cstr(adapter_ref.adaptername.as_ptr());
+
+                interface_info = Some((guid, adapter_ref.index));
+
+                break 'adapter
+            }
+
+            ip_string = ip_string_ref.next
+        }
+
+        adapter = adapter_ref.next
+    }
+    let interface_info: (String, u32) = match interface_info {
+        Some(interface_info) => interface_info,
+        None => {
+            return Err(CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("{} is not valid ip address", addr),
+            ))
+        }
+    };
+
+    Ok(interface_info)
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_interface_by_ip(addr: &Ipv4) -> Result<String, CursedErrorHandle> {
+    let mut addrs: *mut ccs::ifaddrs = ccs::null_mut();
+
+    let result: i32 = unsafe {
+        ccs::getifaddrs(&mut addrs)
+    };
+
+    if result != 0 {
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            String::from("can\'t get interfaces"),
+        ))
+    }
+
+    let mut interface: Option<String> = None;
+    loop {
+        if addrs as usize == 0 {
+            break
+        }
+        let addrs_ref: &mut ccs::ifaddrs = unsafe {
+            &mut *addrs
+        };
+        let addr_in_ref: &mut ccs::sockaddr_in = unsafe {
+            &mut *(addrs_ref.ifa_addr as *mut ccs::sockaddr_in)
+        };
+        let mask_in_ref: &mut ccs::sockaddr_in = unsafe {
+            &mut *(addrs_ref.ifa_netmask as *mut ccs::sockaddr_in)
+        };
+
+        let ip_addr: [u8; IPV4_LEN] = unsafe {
+            std::mem::transmute(addr_in_ref.sin_addr.s_addr)
+        };
+        let finding_ip_addr: [u8; IPV4_LEN] = addr.to();
+        if ip_addr == finding_ip_addr {
+            interface = Some(str_from_cstr(addrs_ref.ifa_name));
+            break
+        }
+
+        let ip_addr: Ipv4 = Handle::from(ip_addr);
+
+        let netmask: [u8; IPV4_LEN] = unsafe {
+            std::mem::transmute(mask_in_ref.sin_addr.s_addr)
+        };
+        
+        let netmask: Ipv4 = Handle::from(netmask);
+        println!("{} - {}", ip_addr, netmask);
+
+        addrs = addrs_ref.ifa_next
+    }
+    unsafe { ccs::freeifaddrs(addrs) };
+
+    let interface: String = match interface {
+        Some(interface_info) => interface_info,
+        None => return Err(CursedErrorHandle::new(
+            CursedError::InvalidArgument,
+            format!("{} is not valid ip address", addr),
+        )),
+    };
+
+    Ok(interface)
 }

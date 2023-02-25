@@ -237,16 +237,18 @@ impl Tun {
     
     #[cfg(target_os = "linux")]
     fn create_linux(interface: &str, routes: &[&Ipv4], debug: bool) -> Result<Self, CursedErrorHandle> {
+        let ip_addr: Ipv4 = ipv4!((107).(0).(0).(0));
+
         let interface_create_query: String = format!("-c ip tuntap add mode tun dev \"{}\"", interface);
         let route_add_128_query: String = format!("-c ip route add 128/1 dev \"{}\"", interface);
         let route_add_0_query: String = format!("-c ip route add 0/1 dev \"{}\"", interface);
-        let addr_add_query: String = format!("-c ip addr add 128.0.0.0/1 dev \"{}\"", interface);
+        let addr_add_query: String = format!("-c ip addr add \"{}\"/1 dev \"{}\"", ip_addr, interface);
         let set_up_query: String = format!("-c ip link set dev \"{}\" up", interface);
         
         let sysctl_query: String = "-c sysctl -w net.ipv4.ip_forward=1".to_string();
-        let postrouting_query: String = format!("iptables -t nat -A POSTROUTING -o \"{}\" -j MASQUERADE", interface);
-        let forwarding_query: String = format!("iptables -I FORWARD 1 -i \"{}\" -m state --state RELATED,ESTABLISHED -j ACCEPT", interface);
-        let accept_forwarding_query: String = format!("iptables -I FORWARD 1 -o \"{}\" -j ACCEPT", interface);
+        let postrouting_query: String = format!("-c iptables -t nat -A POSTROUTING -o \"{}\" -j MASQUERADE", interface);
+        let forwarding_query: String = format!("-c iptables -I FORWARD 1 -i \"{}\" -m state --state RELATED,ESTABLISHED -j ACCEPT", interface);
+        let accept_forwarding_query: String = format!("-c iptables -I FORWARD 1 -o \"{}\" -j ACCEPT", interface);
 
         const QUERIES_SIZE: usize = 9;
         let queries: [&str; QUERIES_SIZE] = [
@@ -264,22 +266,10 @@ impl Tun {
         run_queries(&queries, "sh")?;
 
         for route in routes {
-            let interface_get_query: String = format!("-c ip route show 0/0 | sed -e 's/.* via ([^ ]*).*/{}/\'", 1 as char);
-            let interface: String = match std::process::Command::new("sh").arg(interface_get_query).output() {
-                Ok(interface) => str_from_bytes(&interface.stdout),
-                Err(err) => return Err(
-                    CursedErrorHandle::new(
-                        CursedError::Sockets,
-                        format!("can\'t create interface due to \"{}\"", err.to_string())
-                    )
-                ),
-            };
-            if debug {
-                println!("{} is used as interface for {}", interface, route)
-            }
+            let interface: String = get_interface_by_ip(*route)?;
 
-            let route_add_query: String = format!("-c ip route add {} via {}", route, interface);
-            if let Err(err) = std::process::Command::new("sh").arg(route_add_query).output() {
+            let route_query: String = format!("-c ip route add \"{}\"/32 dev \"{}\"", route, interface);
+            if let Err(err) = std::process::Command::new("sh").arg(route_query).output() {
                 return Err(
                     CursedErrorHandle::new(
                         CursedError::Sockets,
@@ -335,7 +325,7 @@ impl Tun {
         let (_, _, index): (Ipv4, Mac, u32) = get_interface_info(&guid)?;
 
         let ip_addr: Ipv4 = ipv4!((107).(0).(0).(0));
-        let addr_add_query: String = format!("/C netsh interface ip set address \"{}\" static \"{}\" 255.255.255.255", interface, ip_addr);
+        let addr_add_query: String = format!("/C netsh interface ip set address \"{}\" static \"{}\" 0.0.0.0", interface, ip_addr);
         let route_query: String = format!("/C route add 0.0.0.0 MASK 0.0.0.0 0.0.0.0 IF {} METRIC 3", index);
 
         const QUERIES_SIZE: usize = 2;
@@ -347,7 +337,9 @@ impl Tun {
         run_queries(&queries, "cmd")?;
 
         for route in routes {
-            let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 \"{}\"", route, ip_addr);
+            let (_, index): (String, u32) = get_interface_by_ip(*route)?;
+
+            let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", route, index);
             if let Err(err) = std::process::Command::new("cmd").arg(route_add_query).output() {
                 return Err(
                     CursedErrorHandle::new(

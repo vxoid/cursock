@@ -156,6 +156,18 @@ impl Clone for ifmap {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[repr(C)]
+pub struct ifaddrs {
+    pub ifa_next: *mut ifaddrs,
+    pub ifa_name: *mut i8,
+    pub ifa_flags: u32,
+    pub ifa_addr: *mut sockaddr,
+    pub ifa_netmask: *mut sockaddr,
+    pub ifa_broadaddr: *mut sockaddr,
+    pub ifa_data: *mut std::os::raw::c_void,
+}
+
 #[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct FILE {
