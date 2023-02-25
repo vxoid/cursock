@@ -833,7 +833,69 @@ pub fn run_queries(queries: &[&str], program: &str) -> Result<(), CursedErrorHan
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_interface_info(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHandle> {
+pub fn get_interface_by_index(index: u32) -> Result<(Ipv4, Mac, String), CursedErrorHandle> {
+    let mut size: u32 = 0;
+
+    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
+
+    let mut buffer: Vec<u8> = vec![0; size as usize];
+    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
+        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
+    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
+
+    if result != 0 {
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            format!("Got {} error while getting adapters info", result),
+        ));
+    }
+
+    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
+    let mut adapter_info: Option<(Ipv4, Mac, String)> = None;
+
+    loop {
+        if adapter as usize == 0 {
+            break;
+        }
+        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
+
+        if adapter_ref.index == index {
+            let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
+            memcpy(
+                mac_addr.as_mut_ptr(),
+                adapter_ref.address.as_ptr(),
+                std::mem::size_of::<[u8; MAC_LEN]>(),
+            );
+
+            let mut ip_addr: [u8; IPV4_LEN] = [0; IPV4_LEN];
+            memcpy(
+                &mut ip_addr,
+                &adapter_ref.ipaddresslist.context,
+                std::mem::size_of::<[u8; IPV4_LEN]>(),
+            );
+
+            let guid: String = str_from_cstr(adapter_ref.adaptername.as_ptr());
+
+            adapter_info = Some((Handle::from(ip_addr), Handle::from(mac_addr), guid))
+        }
+
+        adapter = adapter_ref.next
+    }
+    let adapter_info: (Ipv4, Mac, String) = match adapter_info {
+        Some(adapter_info) => adapter_info,
+        None => {
+            return Err(CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("{} is not valid adapter index (use route print for getting it)", index),
+            ))
+        }
+    };
+
+    Ok(adapter_info)
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_interface_by_guid(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHandle> {
     let mut size: u32 = 0;
 
     unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
@@ -859,7 +921,7 @@ pub fn get_interface_info(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHan
         }
         let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
 
-        if guid == &str_from_cstr(adapter_ref.adaptername.as_ptr())[..] {
+        if &str_from_cstr(adapter_ref.adaptername.as_ptr())[..] == guid {
             let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
             memcpy(
                 mac_addr.as_mut_ptr(),
@@ -884,7 +946,7 @@ pub fn get_interface_info(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHan
         None => {
             return Err(CursedErrorHandle::new(
                 CursedError::InvalidArgument,
-                format!("{} is not valid adapter name", guid),
+                format!("{} is not valid adapter guid", guid),
             ))
         }
     };
@@ -924,20 +986,9 @@ pub fn get_interface_info(
         interface.as_bytes_with_nul().len(),
     );
 
-    let index: i32 = match get_interface_index(socket, &mut if_request, debug) {
-        Ok(ifindex) => ifindex,
-        Err(err) => return Err(err),
-    };
-
-    let ip: Ipv4 = match get_interface_ip(socket, &mut if_request, debug) {
-        Ok(ip) => ip,
-        Err(err) => return Err(err),
-    };
-
-    let mac: Mac = match get_interface_mac(socket, &mut if_request, debug) {
-        Ok(mac) => mac,
-        Err(err) => return Err(err),
-    };
+    let index: i32 = get_interface_index(socket, &mut if_request, debug)?;
+    let ip: Ipv4 = get_interface_ip(socket, &mut if_request, debug)?;
+    let mac: Mac = get_interface_mac(socket, &mut if_request, debug)?;
 
     Ok((ip, mac, index))
 }
@@ -1097,40 +1148,29 @@ pub fn get_interface_by_ip(addr: &Ipv4) -> Result<String, CursedErrorHandle> {
         ))
     }
 
+    let mut iaddrs: *mut ccs::ifaddrs = addrs;
     let mut interface: Option<String> = None;
     loop {
-        if addrs as usize == 0 {
+        if iaddrs as usize == 0 {
             break
         }
-        let addrs_ref: &mut ccs::ifaddrs = unsafe {
-            &mut *addrs
+        let iaddrs_ref: &mut ccs::ifaddrs = unsafe {
+            &mut *iaddrs
         };
         let addr_in_ref: &mut ccs::sockaddr_in = unsafe {
-            &mut *(addrs_ref.ifa_addr as *mut ccs::sockaddr_in)
+            &mut *(iaddrs_ref.ifa_addr as *mut ccs::sockaddr_in)
         };
-        let mask_in_ref: &mut ccs::sockaddr_in = unsafe {
-            &mut *(addrs_ref.ifa_netmask as *mut ccs::sockaddr_in)
-        };
-
         let ip_addr: [u8; IPV4_LEN] = unsafe {
             std::mem::transmute(addr_in_ref.sin_addr.s_addr)
         };
+
         let finding_ip_addr: [u8; IPV4_LEN] = addr.to();
         if ip_addr == finding_ip_addr {
-            interface = Some(str_from_cstr(addrs_ref.ifa_name));
+            interface = Some(str_from_cstr(iaddrs_ref.ifa_name));
             break
         }
 
-        let ip_addr: Ipv4 = Handle::from(ip_addr);
-
-        let netmask: [u8; IPV4_LEN] = unsafe {
-            std::mem::transmute(mask_in_ref.sin_addr.s_addr)
-        };
-        
-        let netmask: Ipv4 = Handle::from(netmask);
-        println!("{} - {}", ip_addr, netmask);
-
-        addrs = addrs_ref.ifa_next
+        iaddrs = iaddrs_ref.ifa_next
     }
     unsafe { ccs::freeifaddrs(addrs) };
 

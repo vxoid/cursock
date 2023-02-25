@@ -30,14 +30,11 @@ impl Arp {
     /// #[cfg(target_os = "linux")]
     /// let arp = cursock::Arp::new("wlan0", true).expect("initialize error"); // Linux
     /// #[cfg(target_os = "windows")]
-    /// let arp = cursock::Arp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-    /// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
+    /// let arp = cursock::Arp::new("8", true).expect("initialize error"); // Windows
+    /// // Since v1.2.5 you need to use index which you can get running "route print"
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let socket: Socket = match Socket::new(interface, debug) {
-            Ok(socket) => socket,
-            Err(err) => return Err(err),
-        };
+        let socket: Socket = Socket::new(interface, debug)?;
         Ok(Self { socket })
     }
     /// Does an arp request

@@ -1,4 +1,4 @@
-# Cursock v1.2.4
+# Cursock v1.2.5
 Crate for raw socketing, can send raw packets and some protocols
 
 ## Protocols
@@ -17,6 +17,7 @@ Crate for raw socketing, can send raw packets and some protocols
 - Added tun device manager
 - Automated destruction, made destruct methods private to avoid memory leaks from user
 - Fixed raw socket read timeout error
+- Replaced windows Socket creation guid with index which you can get easier by using "route print"
 
 ## Links
 - [x] docs.rs - https://docs.rs/cursock
@@ -27,8 +28,8 @@ Crate for raw socketing, can send raw packets and some protocols
 #[cfg(target_os = "linux")]
 let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
 #[cfg(target_os = "windows")]
-let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-// Since windows socket implementation is using npcap you should pass "npcap-like" guid
+let socket = cursock::Socket::new("8", true).expect("initialize error"); // Windows
+// Since v1.2.5 you need to use index which you can get running "route print"
 
 let buffer: [u8; 1024] = [0; 1024];
 

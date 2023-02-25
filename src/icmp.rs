@@ -33,14 +33,11 @@ impl Icmp {
     /// #[cfg(target_os = "linux")]
     /// let icmp: Icmp = Icmp::new("eth0", true).expect("init error");
     /// #[cfg(target_os = "windows")]
-    /// let icmp: Icmp = Icmp::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("init error");
-    /// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
+    /// let icmp: Icmp = Icmp::new("8", true).expect("init error");
+    /// // Since v1.2.5 you need to use index which you can get running "route print"
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let socket: Socket = match Socket::new(interface, debug) {
-            Ok(socket) => socket,
-            Err(err) => return Err(err),
-        };
+        let socket: Socket = Socket::new(interface, debug)?;
 
         Ok(Self { socket })
     }

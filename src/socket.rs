@@ -11,8 +11,8 @@ use crate::*;
 /// #[cfg(target_os = "linux")]
 /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
 /// #[cfg(target_os = "windows")]
-/// let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-/// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
+/// let socket = cursock::Socket::new("8", true).expect("initialize error"); // Windows
+/// // Since v1.2.5 you need to use index which you can get running "route print"
 ///
 /// let buffer: [u8; 1024] = [0; 1024];
 ///
@@ -39,8 +39,8 @@ impl Socket {
     /// #[cfg(target_os = "linux")]
     /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
     /// #[cfg(target_os = "windows")]
-    /// let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-    /// // Since windows socket implementation is using npcap you should pass "npcap-like" guid
+    /// let socket = cursock::Socket::new("8", true).expect("initialize error"); // Windows
+    /// // Since v1.2.5 you need to use index which you can get running "route print"
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
         #[cfg(target_os = "linux")]
@@ -173,11 +173,7 @@ impl Socket {
             ));
         }
 
-        let (src_ip, src_mac, index): (Ipv4, Mac, i32) =
-            match get_interface_info(socket, interface, debug) {
-                Ok(info) => info,
-                Err(err) => return Err(err),
-            };
+        let (src_ip, src_mac, index): (Ipv4, Mac, i32) = get_interface_info(socket, interface, debug)?;
 
         if debug {
             println!(
@@ -198,13 +194,20 @@ impl Socket {
     }
     #[cfg(target_os = "windows")]
     fn new_windows(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let (src_ip, src_mac, _): (Ipv4, Mac, u32) = match get_interface_info(interface) {
-            Ok(info) => info,
-            Err(err) => return Err(err),
+        let index: u32 = match interface.parse() {
+            Ok(index) => index,
+            Err(err) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Parse,
+                    format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
+                )
+            ),
         };
 
+        let (src_ip, src_mac, guid): (Ipv4, Mac, String) = get_interface_by_index(index)?;
+
         if debug {
-            println!("{} - ip: {}, mac: {}", interface, src_ip, src_mac);
+            println!("{} - ip: {}, mac: {}, guid: {}", interface, src_ip, src_mac, guid);
         }
 
         let pcap_interface: String = format!("rpcap://\\Device\\NPF_{}", interface);

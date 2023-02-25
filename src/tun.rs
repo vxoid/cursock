@@ -12,7 +12,7 @@ pub struct Tun {
 }
 
 impl Tun {
-    pub fn create(interface: &str, routes: &[&Ipv4], debug: bool) -> Result<Self, CursedErrorHandle> {
+    pub fn create(interface: &str, routes: &[(&Ipv4, &str)], debug: bool) -> Result<Self, CursedErrorHandle> {
         #[cfg(target_os = "linux")]
         {
             Self::create_linux(interface, routes, debug)
@@ -236,14 +236,15 @@ impl Tun {
     }
     
     #[cfg(target_os = "linux")]
-    fn create_linux(interface: &str, routes: &[&Ipv4], debug: bool) -> Result<Self, CursedErrorHandle> {
+    fn create_linux(interface: &str, routes: &[(&Ipv4, &str)], debug: bool) -> Result<Self, CursedErrorHandle> {
         let ip_addr: Ipv4 = ipv4!((107).(0).(0).(0));
 
         let interface_create_query: String = format!("-c ip tuntap add mode tun dev \"{}\"", interface);
-        let route_add_128_query: String = format!("-c ip route add 128/1 dev \"{}\"", interface);
-        let route_add_0_query: String = format!("-c ip route add 0/1 dev \"{}\"", interface);
         let addr_add_query: String = format!("-c ip addr add \"{}\"/1 dev \"{}\"", ip_addr, interface);
         let set_up_query: String = format!("-c ip link set dev \"{}\" up", interface);
+
+        let route_add_128_query: String = format!("-c ip route add 128/1 dev \"{}\"", interface);
+        let route_add_0_query: String = format!("-c ip route add 0/1 dev \"{}\"", interface);
         
         let sysctl_query: String = "-c sysctl -w net.ipv4.ip_forward=1".to_string();
         let postrouting_query: String = format!("-c iptables -t nat -A POSTROUTING -o \"{}\" -j MASQUERADE", interface);
@@ -253,10 +254,10 @@ impl Tun {
         const QUERIES_SIZE: usize = 9;
         let queries: [&str; QUERIES_SIZE] = [
             &interface_create_query,
-            &route_add_128_query,
-            &route_add_0_query,
             &addr_add_query,
             &set_up_query,
+            &route_add_128_query,
+            &route_add_0_query,
             &sysctl_query,
             &postrouting_query,
             &forwarding_query,
@@ -266,9 +267,7 @@ impl Tun {
         run_queries(&queries, "sh")?;
 
         for route in routes {
-            let interface: String = get_interface_by_ip(*route)?;
-
-            let route_query: String = format!("-c ip route add \"{}\"/32 dev \"{}\"", route, interface);
+            let route_query: String = format!("-c ip route add \"{}\"/32 dev \"{}\"", route.0, route.1);
             if let Err(err) = std::process::Command::new("sh").arg(route_query).output() {
                 return Err(
                     CursedErrorHandle::new(
@@ -283,7 +282,7 @@ impl Tun {
     }
 
     #[cfg(target_os = "windows")]
-    fn create_windows(interface: &str, routes: &[&Ipv4], debug: bool) -> Result<Self, CursedErrorHandle> {
+    fn create_windows(interface: &str, routes: &[(&Ipv4, &str)], debug: bool) -> Result<Self, CursedErrorHandle> {
         if debug {
             unsafe { ccs::WintunSetLogger(Some(logger)) };
         }
@@ -322,11 +321,11 @@ impl Tun {
             return Err(CursedErrorHandle::new(CursedError::Sockets, String::from("Can\'t start session")));
         }
         let guid: String = format!("{}", guid);
-        let (_, _, index): (Ipv4, Mac, u32) = get_interface_info(&guid)?;
+        let (_, _, index): (Ipv4, Mac, u32) = get_interface_by_guid(&guid)?;
 
         let ip_addr: Ipv4 = ipv4!((107).(0).(0).(0));
         let addr_add_query: String = format!("/C netsh interface ip set address \"{}\" static \"{}\" 0.0.0.0", interface, ip_addr);
-        let route_query: String = format!("/C route add 0.0.0.0 MASK 0.0.0.0 0.0.0.0 IF {} METRIC 3", index);
+        let route_query: String = format!("/C route add 0.0.0.0 MASK 0.0.0.0 0.0.0.0 IF {} METRIC 3", index); 
 
         const QUERIES_SIZE: usize = 2;
         let queries: [&str; QUERIES_SIZE] = [
@@ -337,9 +336,17 @@ impl Tun {
         run_queries(&queries, "cmd")?;
 
         for route in routes {
-            let (_, index): (String, u32) = get_interface_by_ip(*route)?;
+            let index: u32 = match route.1.parse() {
+                Ok(index) => index,
+                Err(err) => return Err(
+                    CursedErrorHandle::new(
+                        CursedError::Parse,
+                        format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
+                    )
+                ),
+            };
 
-            let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", route, index);
+            let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", route.0, index);
             if let Err(err) = std::process::Command::new("cmd").arg(route_add_query).output() {
                 return Err(
                     CursedErrorHandle::new(

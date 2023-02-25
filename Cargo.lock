@@ -16,7 +16,7 @@ checksum = "a39e86818b1ed6dc079810f8341064c71fa5fe84801c6993a029d14bfa7ea504"
 
 [[package]]
 name = "cursock"
-version = "1.2.4"
+version = "1.2.5"
 dependencies = [
  "curerr",
  "curmacro",
