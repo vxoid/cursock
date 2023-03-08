@@ -20,4 +20,11 @@ version = "1.2.5"
 dependencies = [
  "curerr",
  "curmacro",
+ "curuam",
 ]
+
+[[package]]
+name = "curuam"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e37165f04a49087f3a112bf779d5560408516b56b0c568b60ece2f5c11520f9c"

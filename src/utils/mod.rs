@@ -2,13 +2,7 @@ use crate::*;
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
 
-use std::{
-    process::Command,
-    time::{
-        Duration,
-        SystemTimeError,
-    }
-};
+use std::process::Command;
 
 #[macro_export]
 macro_rules! callback {
@@ -19,16 +13,16 @@ macro_rules! callback {
         $callback(&$arg)
     }
 }
-
 #[macro_export]
 macro_rules! timeout {
-    {
+    (
         $vis:vis $fnname:ident($($argname:ident: $arg:ty $(=> $callback: expr)?), *) -> $return:ty, $fn:expr
-    } => {
+    ) => {
         $vis fn $fnname($($argname: $arg,)* time: std::time::Duration) -> Option<$return> {
             use std::thread;
+            use std::sync::mpsc;
 
-            let (tx, rx) = std::sync::mpsc::channel();
+            let (tx, rx) = mpsc::channel();
 
             thread::spawn(move || {
                 let _ = tx.send($fn($(callback!($($callback, )?$argname),)*));
@@ -36,28 +30,13 @@ macro_rules! timeout {
     
             let result: $return = match rx.recv_timeout(time) {
                 Ok(result) => result,
-                Err(_) => return None,
+                Err(mpsc::RecvTimeoutError::Timeout) => return None,
+                Err(_) => return None
             };
             
             Some(result)
         }
-    }
-}
-
-#[macro_export]
-macro_rules! ipv4 {
-    (($o1:expr).($o2:expr).($o3:expr).($o4:expr)) => {
-        {
-            let ipv4: Ipv4 = Handle::from([$o1, $o2, $o3, $o4]);
-            ipv4
-        }
     };
-    ($o1:literal.$o2:literal.$o3:literal.$o4:literal) => {
-        {
-            let ipv4: Ipv4 = Handle::from([$o1, $o2, $o3, $o4]);
-            ipv4
-        }
-    }
 }
 
 pub const HW_TYPE: u16 = 1;
@@ -69,12 +48,7 @@ pub const ICMP_PROTO: u16 = 0x0001;
 pub const ICMP_ECHO_REQUEST: u8 = 8;
 pub const ICMP_ECHO_RESPONSE: u8 = 0;
 pub const EMPTY_ARRAY: [i8; 1] = [0];
-pub const ICMP_HEADER_SIZE: usize = std::mem::size_of::<IcmpHeader>();
-pub const ARP_HEADER_SIZE: usize = std::mem::size_of::<ArpHeader>();
-pub const ETH_HEADER_SIZE: usize = std::mem::size_of::<EthHeader>();
-pub const IP_HEADER_SIZE: usize = std::mem::size_of::<IpHeader>();
-pub const IPV4_LEN: usize = 4;
-pub const MAC_LEN: usize = 6;
+
 
 /// trait for binary operations should be implemented on integers
 /// # Examples
@@ -113,134 +87,6 @@ pub trait BinOpers {
     fn get_bit(&self, index: usize) -> Bit;
     fn set_bit(&self, value: Bit, index: usize) -> Self;
 }
-/// trait for conveting one type into other similar to the From trait
-/// # Examples
-/// ```
-/// use cursock::utils::*;
-///
-/// enum Bit {
-///     One,
-///     Zero
-/// }
-///
-/// impl Handle<bool> for Bit {
-///     fn from(value: bool) -> Self {
-///         match value {
-///             true => Self::One,
-///             false => Self::Zero
-///         }
-///     }
-///     fn to(&self) -> bool {
-///         match *self {
-///             Self::One => true,
-///             Self::Zero => false,
-///         }
-///     }
-/// }
-///
-/// let boolean: bool = Bit::Zero.to();
-///
-/// assert_eq!(boolean, false)
-/// ```
-pub trait Handle<T> {
-    fn from(value: T) -> Self;
-    fn to(&self) -> T;
-}
-
-/// struct for representing ipv4 addresses
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
-///
-/// let ip_octets: [u8; IPV4_LEN] = ip_addr.to(); // Basicly IPV4_LEN is count of octets of ipv4 (4)
-///
-/// assert_eq!(ip_octets, [192, 168, 1, 1])
-/// ```
-pub struct Ipv4 {
-    ip_addr: [u8; IPV4_LEN],
-}
-
-/// struct for representing mac addresses
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let mac_addr: Mac = Handle::from([0xff; MAC_LEN]);
-///
-/// let mac_octets: [u8; MAC_LEN] = mac_addr.to();
-///
-/// assert_eq!(mac_octets, [0xff; MAC_LEN])
-/// ```
-pub struct Mac {
-    mac_addr: [u8; MAC_LEN],
-}
-
-/// wrapper around type's pointer simple to box or arc smart pointer
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let a = 1;
-///
-/// let a_wrapper = Wrapper::new(&a);
-///
-/// assert_eq!(*a_wrapper.reference(), a)
-/// ```
-pub struct Wrapper<T: ?Sized> {
-    pointer: *const T,
-}
-
-/// arp header
-#[repr(C)]
-pub struct ArpHeader {
-    pub hardware_type: u16,
-    pub protocol_type: u16,
-    pub hardware_len: u8,
-    pub protocol_len: u8,
-    pub opcode: u16,
-    pub sender_mac: [u8; MAC_LEN],
-    pub sender_ip: [u8; IPV4_LEN],
-    pub target_mac: [u8; MAC_LEN],
-    pub target_ip: [u8; IPV4_LEN],
-}
-
-/// icmp header
-#[repr(C)]
-pub struct IcmpHeader {
-    pub type_: u8,
-    pub code: u8,
-    pub check: u16,
-    pub id: u16,
-    pub sq: u16,
-}
-
-/// eth header
-#[repr(C)]
-pub struct EthHeader {
-    pub dest: [u8; MAC_LEN],
-    pub source: [u8; MAC_LEN],
-    pub proto: u16,
-}
-
-/// ip header
-#[repr(C)]
-pub struct IpHeader {
-    pub verihl: u8,
-    pub tos: u8,
-    pub tot_len: u16,
-    pub id: u16,
-    pub frag: u16,
-    pub ttl: u8,
-    pub protocol: u8,
-    pub check: u16,
-    pub saddr: [u8; IPV4_LEN],
-    pub daddr: [u8; IPV4_LEN],
-}
 
 /// arp header wrapper with fields that contains only addresses
 ///
@@ -278,13 +124,22 @@ pub struct IpData {
 }
 
 /// an icmp header wrapper without useless fields
-/// 
-/// 
 pub struct IcmpData {
     type_: IcmpType,
     code: u8,
     checksum: u16,
     data: Vec<u8>
+}
+
+/// enum of ip versions
+pub enum IpVersions {
+    V4,
+    V6
+}
+
+pub enum SetupTypes<'all_lt, 'addr_lt, 'str_lt> {
+    RouteAll(&'all_lt [(&'addr_lt Ipv4Addr, &'str_lt str)]),
+    Separated
 }
 
 /// an icmp types enum
@@ -462,20 +317,6 @@ impl IcmpData {
     );
 }
 
-impl<T: ?Sized> Wrapper<T> {
-    pub fn new(pointer: *const T) -> Self {
-        Self { pointer }
-    }
-    pub fn reference(&self) -> &T {
-        unsafe { &*self.pointer }
-    }
-    pub fn mut_reference(&self) -> &mut T {
-        unsafe { &mut *(self.pointer as *mut T) }
-    }
-}
-
-unsafe impl<T: ?Sized> Send for Wrapper<T> {}
-
 impl Handle<bool> for Bit {
     fn from(value: bool) -> Self {
         match value {
@@ -510,82 +351,6 @@ impl Handle<u8> for Bit {
             Self::One => 1,
             Self::Zero => 0,
         }
-    }
-}
-
-impl Clone for Mac {
-    fn clone(&self) -> Self {
-        Self {
-            mac_addr: self.mac_addr.clone(),
-        }
-    }
-}
-
-impl Handle<[u8; MAC_LEN]> for Mac {
-    fn from(mac_addr: [u8; MAC_LEN]) -> Self {
-        Self { mac_addr }
-    }
-    fn to(&self) -> [u8; MAC_LEN] {
-        self.mac_addr.clone()
-    }
-}
-
-impl std::fmt::Display for Mac {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:x}:{:x}:{:x}:{:x}:{:x}:{:x}",
-            self.mac_addr[0],
-            self.mac_addr[1],
-            self.mac_addr[2],
-            self.mac_addr[3],
-            self.mac_addr[4],
-            self.mac_addr[5]
-        )
-    }
-}
-
-impl Clone for Ipv4 {
-    fn clone(&self) -> Self {
-        Self {
-            ip_addr: self.ip_addr.clone(),
-        }
-    }
-}
-
-impl Handle<[u8; IPV4_LEN]> for Ipv4 {
-    fn from(ip_addr: [u8; IPV4_LEN]) -> Self {
-        Self { ip_addr }
-    }
-    fn to(&self) -> [u8; IPV4_LEN] {
-        self.ip_addr.clone()
-    }
-}
-
-impl std::fmt::Display for Ipv4 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}.{}.{}.{}",
-            self.ip_addr[0], self.ip_addr[1], self.ip_addr[2], self.ip_addr[3],
-        )
-    }
-}
-
-impl Handle<u32> for Ipv4 {
-    fn from(value: u32) -> Self {
-        let o1: u8 = (value & 0xff) as u8;
-        let o2: u8 = ((value >> 8) & 0xff) as u8;
-        let o3: u8 = ((value >> 16) & 0xff) as u8;
-        let o4: u8 = ((value >> 24) & 0xff) as u8;
-
-        Handle::from([o4, o3, o2, o1])
-    }
-    fn to(&self) -> u32 {
-        ((self.ip_addr[0] as u32) << 24)
-            + ((self.ip_addr[1] as u32) << 16)
-            + ((self.ip_addr[2] as u32) << 8)
-            + ((self.ip_addr[3] as u32) << 0)
     }
 }
 
@@ -631,195 +396,9 @@ impl ArpResponse {
     );
 }
 
-/// function for building to the exponent
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let a = 3;
-/// let b = power(a as f64, 2); // 1*3*3
-///
-/// assert_eq!(b, 9f64)
-/// ```
-pub fn power(f: f64, power: u16) -> f64 {
-    power_with_start(1f64, f, power)
-}
-
-fn power_with_start(start: f64, f: f64, power: u16) -> f64 {
-    let mut out: f64 = start;
-
-    for _ in 0..power {
-        out *= f
-    }
-
-    out
-}
-
-/// c memcpy clone
-///
-/// # Example
-///
-/// ```
-/// use cursock::utils::*;
-///
-/// let a: [i128; 4] = [1210, 3271231, 478654, 239]; // Just random numbers
-/// let mut b: [i128; 4] = [0; 4];
-/// let mut c: [i128; 4] = [0; 4];
-///
-/// memcpy(&mut b, &a, std::mem::size_of::<[i128; 4]>());
-/// memcpy(c.as_mut_ptr(), a.as_ptr(), std::mem::size_of::<[i128; 4]>());
-///
-/// assert_eq!(a, b);
-/// assert_eq!(a, c);
-/// assert_eq!(b, c)
-/// ```
-pub fn memcpy<TD, TS>(dest: *mut TD, src: *const TS, size: usize) -> *mut TD {
-    if dest as usize == 0 {
-        return 0 as *mut TD;
-    }
-
-    let byte_dest: *mut u8 = dest as *mut u8;
-    let byte_src: *const u8 = src as *const u8;
-
-    unsafe {
-        for i in 0..size {
-            *((byte_dest as usize + i) as *mut u8) = *((byte_src as usize + i) as *const u8)
-        }
-    }
-
-    dest
-}
-
-/// creates string from bytes
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let bytes = b"Hello, world";
-///
-/// assert_eq!(str_from_bytes(bytes).as_bytes(), bytes)
-/// ```
-pub fn str_from_bytes(bytes: &[u8]) -> String {
-    let mut string: String = String::new();
-
-    for byte in bytes {
-        string.push(byte.clone() as char)
-    }
-
-    string
-}
-
-/// creates string from char pointer
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-/// use std::ffi::CString;
-///
-/// let string = "Hello, world";
-/// let cstring = CString::new(string).expect("cstring init error");
-///
-/// assert_eq!(&str_from_cstr(cstring.as_ptr())[..], string)
-/// ```
-pub fn str_from_cstr(cstr: *const i8) -> String {
-    let mut string: String = String::new();
-
-    let mut i: usize = 0;
-    loop {
-        let byte: i8 = unsafe { *((cstr as usize + i) as *const i8) };
-        if byte == 0 {
-            break;
-        }
-
-        string.push(byte as u8 as char);
-
-        i += 1
-    }
-
-    string
-}
-
-pub fn str_from_cutf16(str: *const u16) -> String {
-
-    let mut message: String = String::new();
-    let mut i: usize = 0;
-
-    loop {
-        let value: u16 = unsafe {
-            *((str as usize + i) as *const u16)
-        };
-        if value == 0 {
-            break;
-        }
-
-        message.push(value as u8 as char);
-        i += 1;
-    }
-
-    message
-}
-
-pub type RandomNumber = u128;
-pub fn random_with_seed(seed: RandomNumber) -> RandomNumber {
-    const SEED_OFFSET: u8 = 8;
-
-    const MULTIPLIER: u128 = 9;
-    const ADDER: u128 = 5;
-    let mut seed: RandomNumber = seed;
-    let mut result: RandomNumber = 0;
-    let mut i: usize = 0;
-    
-    loop {
-        if (i*SEED_OFFSET as usize) >= RandomNumber::BITS as usize {
-            break
-        }
-
-        seed = ((seed*MULTIPLIER)+ADDER)%power(2f64, SEED_OFFSET as u16) as u128;
-        result += seed << 8*i;
-
-        i += 1;
-    }
-
-    !result
-}
-
-pub fn random_in_range(min: RandomNumber, max: RandomNumber) -> Result<RandomNumber, SystemTimeError> {
-    let unix_epoch: Duration = std::time::UNIX_EPOCH.elapsed()?;
-    Ok((random_with_seed(unix_epoch.as_nanos() as RandomNumber)%(max-min))+min)
-}
-
-pub fn checksum(header: *const u8, len: usize) -> u16 {
-    let mut sum: i32 = 0;
-    let mut left: usize = len;
-    let words: *const u16 = header as *const u16; 
-
-    let mut i: usize = 0;
-    while left > 1 {
-        sum += unsafe {
-            *((words as usize + i) as *const u16)
-        } as i32;
-
-        left -= 2;
-        i += 2
-    }
-
-    if left == 1 {            
-        sum += unsafe {
-            *((words as usize + i - 1) as *const u8)
-        } as i32;
-    }
-
-    sum = (sum >> 16) + (sum & 0xffff); 
-    sum += sum >> 16;
-
-    (!sum) as u16
-}
-
-pub fn run_queries(queries: &[&str], program: &str) -> Result<(), CursedErrorHandle> {
+pub fn run_queries(queries: &[&[&str]], program: &str) -> Result<(), CursedErrorHandle> {
     for query in queries {
-        if let Err(err) = Command::new(program).arg(query).output() {
+        if let Err(err) = Command::new(program).args(*query).output() {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::Sockets,
@@ -833,133 +412,234 @@ pub fn run_queries(queries: &[&str], program: &str) -> Result<(), CursedErrorHan
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_interface_by_index(index: u32) -> Result<(Ipv4, Mac, String), CursedErrorHandle> {
+pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, String), CursedErrorHandle> {
     let mut size: u32 = 0;
-
-    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
-
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
-        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
-    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
-
-    if result != 0 {
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            format!("Got {} error while getting adapters info", result),
-        ));
-    }
-
-    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
-    let mut adapter_info: Option<(Ipv4, Mac, String)> = None;
-
-    loop {
-        if adapter as usize == 0 {
-            break;
-        }
-        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
-
-        if adapter_ref.index == index {
-            let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
-            memcpy(
-                mac_addr.as_mut_ptr(),
-                adapter_ref.address.as_ptr(),
-                std::mem::size_of::<[u8; MAC_LEN]>(),
-            );
-
-            let mut ip_addr: [u8; IPV4_LEN] = [0; IPV4_LEN];
-            memcpy(
-                &mut ip_addr,
-                &adapter_ref.ipaddresslist.context,
-                std::mem::size_of::<[u8; IPV4_LEN]>(),
-            );
-
-            let guid: String = str_from_cstr(adapter_ref.adaptername.as_ptr());
-
-            adapter_info = Some((Handle::from(ip_addr), Handle::from(mac_addr), guid))
-        }
-
-        adapter = adapter_ref.next
-    }
-    let adapter_info: (Ipv4, Mac, String) = match adapter_info {
-        Some(adapter_info) => adapter_info,
-        None => {
-            return Err(CursedErrorHandle::new(
-                CursedError::InvalidArgument,
-                format!("{} is not valid adapter index (use route print for getting it)", index),
-            ))
-        }
+    let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = ccs::null_mut();
+    unsafe {
+        ccs::GetAdaptersAddresses(
+            ccs::AF_UNSPEC as u32,
+            0,
+            ccs::null_mut(),
+            addresses,
+            &mut size
+        )
     };
 
-    Ok(adapter_info)
+    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
+    let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_ADDRESSES;
+
+    let err: u32 = unsafe {
+        ccs::GetAdaptersAddresses(
+            ccs::AF_UNSPEC as u32,
+            0,
+            ccs::null_mut(),
+            addresses,
+            &mut size
+        )
+    };
+
+    if err != ccs::ERROR_SUCCESS {
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::OS,
+                "can\'t get adapter addresses".to_string()
+            )
+        );
+    }
+
+    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, String)> = None;
+    let mut p_current: *mut ccs::IP_ADAPTER_ADDRESSES = addresses;
+    while !p_current.is_null() {
+        let adapter: &mut ccs::IP_ADAPTER_ADDRESSES = unsafe {
+            &mut *p_current
+        };
+
+        if index == adapter.index {
+            let mut mac: [u8; MAC_LEN] = [0; MAC_LEN];
+            memcpy(mac.as_mut_ptr(), adapter.physical_address.as_ptr(), MAC_LEN);
+            let mac: Mac = Handle::from(mac);
+            
+            let mut ipv4: Option<Ipv4Addr> = None;
+            let mut ipv6: Option<Ipv6Addr> = None;
+
+            let mut unicast_address: *mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = adapter.first_unicast;
+            while !unicast_address.is_null() {
+                let r_unicast_address: &mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = unsafe {
+                    &mut *unicast_address
+                };
+
+                let p_sockaddr: *mut ccs::sockaddr = r_unicast_address.address.sock_addr;
+                if !p_sockaddr.is_null() {
+                    let family: u16 = unsafe {
+                        (*p_sockaddr).sa_family
+                    };
+                    match family as i32 {
+                        ccs::AF_INET => {
+                            let address: &mut ccs::sockaddr_in = unsafe {
+                                &mut *(p_sockaddr as *mut ccs::sockaddr_in)
+                            };
+                            
+                            ipv4 = Some(Ipv4Addr::from(address.sin_addr.s_addr))
+                        },
+                        ccs::AF_INET6 => {
+                            let address: &mut ccs::sockaddr_in6 = unsafe {
+                                &mut *(p_sockaddr as *mut ccs::sockaddr_in6)
+                            };
+
+                            ipv6 = Some(Ipv6Addr::from(address.sin6_addr.s6_addr));
+                        },
+                        _ => {}
+                    }
+                }
+
+                unicast_address = r_unicast_address.next;
+            }
+            
+            data = Some((ipv4, ipv6, mac, str_from_cstr(adapter.adapter_name)))
+        }
+
+        p_current = adapter.next
+    }
+    let data = match data {
+        Some(data) => data,
+        None => return Err(
+            CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("{} isn\'t valid adapter index", index)
+            )
+        ),
+    };
+
+    Ok(data)
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_interface_by_guid(guid: &str) -> Result<(Ipv4, Mac, u32), CursedErrorHandle> {
+pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, u32), CursedErrorHandle> {
     let mut size: u32 = 0;
-
-    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
-
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
-        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
-    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
-
-    if result != 0 {
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            format!("Got {} error while getting adapters info", result),
-        ));
-    }
-
-    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
-    let mut adapter_info: Option<(Ipv4, Mac, u32)> = None;
-
-    loop {
-        if adapter as usize == 0 {
-            break;
-        }
-        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
-
-        if &str_from_cstr(adapter_ref.adaptername.as_ptr())[..] == guid {
-            let mut mac_addr: [u8; MAC_LEN] = [0; MAC_LEN];
-            memcpy(
-                mac_addr.as_mut_ptr(),
-                adapter_ref.address.as_ptr(),
-                std::mem::size_of::<[u8; MAC_LEN]>(),
-            );
-
-            let mut ip_addr: [u8; IPV4_LEN] = [0; IPV4_LEN];
-            memcpy(
-                &mut ip_addr,
-                &adapter_ref.ipaddresslist.context,
-                std::mem::size_of::<[u8; IPV4_LEN]>(),
-            );
-
-            adapter_info = Some((Handle::from(ip_addr), Handle::from(mac_addr), adapter_ref.index))
-        }
-
-        adapter = adapter_ref.next
-    }
-    let adapter_info: (Ipv4, Mac, u32) = match adapter_info {
-        Some(adapter_info) => adapter_info,
-        None => {
-            return Err(CursedErrorHandle::new(
-                CursedError::InvalidArgument,
-                format!("{} is not valid adapter guid", guid),
-            ))
-        }
+    let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = ccs::null_mut();
+    unsafe {
+        ccs::GetAdaptersAddresses(
+            ccs::AF_UNSPEC as u32,
+            0,
+            ccs::null_mut(),
+            addresses,
+            &mut size
+        )
     };
 
-    Ok(adapter_info)
+    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
+    let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_ADDRESSES;
+
+    let err: u32 = unsafe {
+        ccs::GetAdaptersAddresses(
+            ccs::AF_UNSPEC as u32,
+            0,
+            ccs::null_mut(),
+            addresses,
+            &mut size
+        )
+    };
+
+    if err != ccs::ERROR_SUCCESS {
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::OS,
+                "can\'t get adapter addresses".to_string()
+            )
+        );
+    }
+
+    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, u32)> = None;
+    let mut p_current: *mut ccs::IP_ADAPTER_ADDRESSES = addresses;
+    while !p_current.is_null() {
+        let adapter: &mut ccs::IP_ADAPTER_ADDRESSES = unsafe {
+            &mut *p_current
+        };
+
+        if guid == str_from_cstr(adapter.adapter_name) {
+            let mut mac: [u8; MAC_LEN] = [0; MAC_LEN];
+            memcpy(mac.as_mut_ptr(), adapter.physical_address.as_ptr(), MAC_LEN);
+            let mac: Mac = Handle::from(mac);
+            
+            let mut ipv4: Option<Ipv4Addr> = None;
+            let mut ipv6: Option<Ipv6Addr> = None;
+
+            let mut unicast_address: *mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = adapter.first_unicast;
+            while !unicast_address.is_null() {
+                let r_unicast_address: &mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = unsafe {
+                    &mut *unicast_address
+                };
+
+                let p_sockaddr: *mut ccs::sockaddr = r_unicast_address.address.sock_addr;
+                if !p_sockaddr.is_null() {
+                    let family: u16 = unsafe {
+                        (*p_sockaddr).sa_family
+                    };
+                    match family as i32 {
+                        ccs::AF_INET => {
+                            let address: &mut ccs::sockaddr_in = unsafe {
+                                &mut *(p_sockaddr as *mut ccs::sockaddr_in)
+                            };
+                            
+                            ipv4 = Some(Ipv4Addr::from(address.sin_addr.s_addr))
+                        },
+                        ccs::AF_INET6 => {
+                            let address: &mut ccs::sockaddr_in6 = unsafe {
+                                &mut *(p_sockaddr as *mut ccs::sockaddr_in6)
+                            };
+
+                            ipv6 = Some(Ipv6Addr::from(address.sin6_addr.s6_addr));
+                        },
+                        _ => {}
+                    }
+                }
+
+                unicast_address = r_unicast_address.next;
+            }
+            
+            data = Some((ipv4, ipv6, mac, adapter.index))
+        }
+
+        p_current = adapter.next
+    }
+    let data = match data {
+        Some(data) => data,
+        None => return Err(
+            CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("{} isn\'t valid adapter guid", guid)
+            )
+        ),
+    };
+
+    Ok(data)
 }
 
 #[cfg(target_os = "linux")]
 pub fn get_interface_info(
-    socket: i32,
     interface: &str,
     debug: bool,
-) -> Result<(Ipv4, Mac, i32), CursedErrorHandle> {
+) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32), CursedErrorHandle> {
+    let socket: i32 = unsafe {
+        ccs::socket(
+            ccs::AF_INET,
+            ccs::SOCK_DGRAM,
+            0,
+        )
+    };
+
+    if socket < 0 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::Initialize,
+                format!("Can\'t initialize socket ({} < 0)", socket),
+            )
+        );
+    }
+
     let interface: CString = match CString::new(interface) {
         Ok(interface) => interface,
         Err(err) => {
@@ -987,17 +667,46 @@ pub fn get_interface_info(
     );
 
     let index: i32 = get_interface_index(socket, &mut if_request, debug)?;
-    let ip: Ipv4 = get_interface_ip(socket, &mut if_request, debug)?;
     let mac: Mac = get_interface_mac(socket, &mut if_request, debug)?;
+    let ipv4: Option<Ipv4Addr> = match get_interface_ipv4(socket, &mut if_request, debug) {
+        Ok(ipv4) => Some(ipv4),
+        Err(_) => None,
+    };
+    unsafe { ccs::close(socket); }
 
-    Ok((ip, mac, index))
+    let socket: i32 = unsafe {
+        ccs::socket(
+            ccs::AF_INET6,
+            ccs::SOCK_DGRAM,
+            0,
+        )
+    };
+    if socket < 0 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::Initialize,
+                format!("Can\'t initialize socket ({} < 0)", socket),
+            )
+        );
+    }
+
+    let ipv6: Option<Ipv6Addr> = match get_interface_ipv6(socket, &mut if_request, debug) {
+        Ok(ipv6) => Some(ipv6),
+        Err(_) => None,
+    };
+    unsafe { ccs::close(socket); }
+
+    Ok((ipv4, ipv6, mac, index))
 }
 
 #[cfg(target_os = "linux")]
 fn get_interface_index(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<i32, CursedErrorHandle> {
     let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFINDEX, ifr) };
 
-    if err == -1 {
+    if err < 0 {
         if debug {
             unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
         }
@@ -1013,12 +722,12 @@ fn get_interface_index(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result
 }
 
 #[cfg(target_os = "linux")]
-fn get_interface_ip(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv4, CursedErrorHandle> {
+fn get_interface_ipv4(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv4Addr, CursedErrorHandle> {
     let err: i32;
 
     err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
 
-    if err == -1 {
+    if err < 0 {
         if debug {
             unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
         }
@@ -1038,14 +747,36 @@ fn get_interface_ip(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ip
         std::mem::size_of::<[u8; IPV4_LEN]>(),
     );
 
-    Ok(Handle::from(ip))
+    Ok(Ipv4Addr::from(ip))
+}
+
+#[cfg(target_os = "linux")]
+fn get_interface_ipv6(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv6Addr, CursedErrorHandle> {
+    let err: i32;
+
+    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+
+    if err < 0 {
+        if debug {
+            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
+        }
+        return Err(CursedErrorHandle::new(
+            CursedError::Sockets,
+            String::from("Got error while getting SIOCGIFADDR"),
+        ));
+    }
+
+    let addr: *const ccs::sockaddr_in6 =
+        unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in6;
+
+    Ok(Ipv6Addr::from(unsafe { (*addr).sin6_addr.s6_addr }))
 }
 
 #[cfg(target_os = "linux")]
 fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Mac, CursedErrorHandle> {
     let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFHWADDR, ifr) };
 
-    if err == -1 {
+    if err < 0 {
         if debug {
             unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
         }
@@ -1066,121 +797,4 @@ fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<M
     );
 
     Ok(Handle::from(mac))
-}
-
-#[cfg(target_os = "windows")]
-pub fn get_interface_by_ip(addr: &Ipv4) -> Result<(String, u32), CursedErrorHandle> {
-    let mut size: u32 = 0;
-
-    unsafe { ccs::GetAdaptersInfo(ccs::null_mut(), &mut size) };
-
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    let p_adapter_info: *mut ccs::IP_ADAPTER_INFO =
-        buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_INFO;
-    let result: u32 = unsafe { ccs::GetAdaptersInfo(p_adapter_info, &mut size) };
-
-    if result != 0 {
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            format!("Got {} error while getting adapters info", result),
-        ));
-    }
-
-    let mut adapter: *mut ccs::IP_ADAPTER_INFO = p_adapter_info;
-    let mut interface_info: Option<(String, u32)> = None;
-
-    'adapter: loop {
-        if adapter as usize == 0 {
-            break
-        }
-        let adapter_ref: &mut ccs::IP_ADAPTER_INFO = unsafe { &mut *adapter };
-
-        let mut ip_string: *const ccs::IP_ADDR_STRING = &adapter_ref.ipaddresslist;
-        loop {
-            if ip_string as usize == 0 {
-                break
-            }
-            let ip_string_ref: &ccs::IP_ADDR_STRING = unsafe { &*ip_string };
-
-            let ip_addr: [u8; IPV4_LEN] = unsafe {
-                std::mem::transmute(ip_string_ref.context)
-            };
-            let addr: [u8; IPV4_LEN] = addr.to();
-
-            if addr == ip_addr {
-                let guid: String = str_from_cstr(adapter_ref.adaptername.as_ptr());
-
-                interface_info = Some((guid, adapter_ref.index));
-
-                break 'adapter
-            }
-
-            ip_string = ip_string_ref.next
-        }
-
-        adapter = adapter_ref.next
-    }
-    let interface_info: (String, u32) = match interface_info {
-        Some(interface_info) => interface_info,
-        None => {
-            return Err(CursedErrorHandle::new(
-                CursedError::InvalidArgument,
-                format!("{} is not valid ip address", addr),
-            ))
-        }
-    };
-
-    Ok(interface_info)
-}
-
-#[cfg(target_os = "linux")]
-pub fn get_interface_by_ip(addr: &Ipv4) -> Result<String, CursedErrorHandle> {
-    let mut addrs: *mut ccs::ifaddrs = ccs::null_mut();
-
-    let result: i32 = unsafe {
-        ccs::getifaddrs(&mut addrs)
-    };
-
-    if result != 0 {
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            String::from("can\'t get interfaces"),
-        ))
-    }
-
-    let mut iaddrs: *mut ccs::ifaddrs = addrs;
-    let mut interface: Option<String> = None;
-    loop {
-        if iaddrs as usize == 0 {
-            break
-        }
-        let iaddrs_ref: &mut ccs::ifaddrs = unsafe {
-            &mut *iaddrs
-        };
-        let addr_in_ref: &mut ccs::sockaddr_in = unsafe {
-            &mut *(iaddrs_ref.ifa_addr as *mut ccs::sockaddr_in)
-        };
-        let ip_addr: [u8; IPV4_LEN] = unsafe {
-            std::mem::transmute(addr_in_ref.sin_addr.s_addr)
-        };
-
-        let finding_ip_addr: [u8; IPV4_LEN] = addr.to();
-        if ip_addr == finding_ip_addr {
-            interface = Some(str_from_cstr(iaddrs_ref.ifa_name));
-            break
-        }
-
-        iaddrs = iaddrs_ref.ifa_next
-    }
-    unsafe { ccs::freeifaddrs(addrs) };
-
-    let interface: String = match interface {
-        Some(interface_info) => interface_info,
-        None => return Err(CursedErrorHandle::new(
-            CursedError::InvalidArgument,
-            format!("{} is not valid ip address", addr),
-        )),
-    };
-
-    Ok(interface)
 }

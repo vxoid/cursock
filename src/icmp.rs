@@ -20,7 +20,8 @@ use std::time::Duration;
 /// icmp.destroy();
 /// ```
 pub struct Icmp {
-   socket: Socket 
+   socket: Socket,
+   ipv4: Ipv4Addr 
 }
 
 impl Icmp {
@@ -37,9 +38,17 @@ impl Icmp {
     /// // Since v1.2.5 you need to use index which you can get running "route print"
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let socket: Socket = Socket::new(interface, debug)?;
+        let socket: Socket = Socket::new(interface, IpVersions::V4, debug)?;
+        if let IpAddr::V4(ipv4) = socket.get_src_ip().clone() {
+            return Ok(Self { socket, ipv4 });
+        }
 
-        Ok(Self { socket })
+        Err(
+            CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("since {} interface has no ipv4 addresses we can\'t use icmpv4", interface)
+            )
+        )
     }
 
     /// sends icmp echo request
@@ -63,8 +72,8 @@ impl Icmp {
         let eth_header: &mut EthHeader = unsafe {
             &mut *(buffer.as_mut_ptr() as *mut EthHeader)
         };
-        let ip_header: &mut IpHeader = unsafe {
-            &mut *((buffer.as_mut_ptr() as usize + ETH_HEADER_SIZE) as *mut IpHeader)
+        let ip_header: &mut Ipv4Header = unsafe {
+            &mut *((buffer.as_mut_ptr() as usize + ETH_HEADER_SIZE) as *mut Ipv4Header)
         };
         let icmp_header: &mut IcmpHeader = unsafe {
             &mut *((buffer.as_mut_ptr() as usize + ETH_HEADER_SIZE + IP_HEADER_SIZE) as *mut IcmpHeader)
@@ -78,7 +87,7 @@ impl Icmp {
         ip_header.tot_len = ((IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()) as u16).to_be();
         ip_header.ttl = 128;
         ip_header.protocol = ICMP_PROTO as u8;
-        ip_header.saddr = self.socket.get_src_ip().to();
+        ip_header.saddr = self.ipv4.octets();
         ip_header.daddr = dst_ip.to();
 
         icmp_header.type_ = ICMP_ECHO_REQUEST;
@@ -96,7 +105,7 @@ impl Icmp {
         );
 
         let ip_checksum: u16 = checksum(
-            ip_header as *const IpHeader as *const u8,
+            ip_header as *const Ipv4Header as *const u8,
             IP_HEADER_SIZE
         );
         ip_header.check = ip_checksum;
@@ -127,8 +136,8 @@ impl Icmp {
         let eth_header: &EthHeader = unsafe {
             &*(buffer.as_ptr() as *const EthHeader)
         };
-        let ip_header: &IpHeader = unsafe {
-            &*((buffer.as_ptr() as usize + ETH_HEADER_SIZE) as *const IpHeader)
+        let ip_header: &Ipv4Header = unsafe {
+            &*((buffer.as_ptr() as usize + ETH_HEADER_SIZE) as *const Ipv4Header)
         };
         let icmp_header: &IcmpHeader = unsafe {
             &*((buffer.as_mut_ptr() as usize + ETH_HEADER_SIZE + IP_HEADER_SIZE) as *const IcmpHeader)
@@ -189,4 +198,8 @@ impl Icmp {
         ) -> Result<(IpData, IcmpData), CursedErrorHandle>,
         Self::read
     }
+
+    getters!(
+        pub get_socket(socket) -> Socket;
+    );
 }

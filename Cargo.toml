@@ -11,4 +11,5 @@ description = "Crate for raw socketing, can send raw packets and some protocols 
 
 [dependencies]
 curerr = "1.0.1"
+curuam = "0.2.3"
 curmacro = "1.0.0"

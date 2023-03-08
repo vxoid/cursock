@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "iphlpapi.h": "c"
+        "iphlpapi.h": "c",
+        "iptypes.h": "c",
+        "netioapi.h": "c",
+        "windows.h": "c"
     }
 }

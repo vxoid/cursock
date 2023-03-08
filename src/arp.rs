@@ -18,6 +18,7 @@ use crate::*;
 /// ```
 pub struct Arp {
     socket: Socket,
+    ipv4: Ipv4Addr
 }
 
 impl Arp {
@@ -34,8 +35,17 @@ impl Arp {
     /// // Since v1.2.5 you need to use index which you can get running "route print"
     /// ```
     pub fn new(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let socket: Socket = Socket::new(interface, debug)?;
-        Ok(Self { socket })
+        let socket: Socket = Socket::new(interface, IpVersions::V4, debug)?;
+        if let IpAddr::V4(ipv4) = socket.get_src_ip().clone()  {
+            return Ok(Self { socket, ipv4 });
+        }
+
+        Err(
+            CursedErrorHandle::new(
+                CursedError::InvalidArgument,
+                format!("since {} interface has no ipv4 addresses we can\'t use arp", interface)
+            )
+        )
     }
     /// Does an arp request
     /// # Examples
@@ -47,7 +57,7 @@ impl Arp {
     /// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
     /// arp.who_has(&ip_addr, true).expect("send error")
     /// ```
-    pub fn who_has(&self, dst_ip: &Ipv4, debug: bool) -> Result<(), CursedErrorHandle> {
+    pub fn who_has(&self, dst_ip: &Ipv4Addr, debug: bool) -> Result<(), CursedErrorHandle> {
         const BUFFER_SIZE: usize = ETH_HEADER_SIZE + ARP_HEADER_SIZE;
         let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
 
@@ -57,9 +67,9 @@ impl Arp {
 
         eth_header.dest = [0xff; MAC_LEN];
 
-        eth_header.source = self.get_src_mac().to();
+        eth_header.source = self.socket.get_src_mac().to();
         arp_header.target_mac = [0; MAC_LEN];
-        arp_header.sender_mac = self.get_src_mac().to();
+        arp_header.sender_mac = self.socket.get_src_mac().to();
 
         eth_header.proto = (ARP_PROTO as u16).to_be();
 
@@ -69,8 +79,8 @@ impl Arp {
         arp_header.protocol_len = IPV4_LEN as u8;
         arp_header.opcode = (ARP_REQUEST as u16).to_be();
 
-        arp_header.sender_ip = self.get_src_ip().to();
-        arp_header.target_ip = dst_ip.to();
+        arp_header.sender_ip = self.ipv4.octets();
+        arp_header.target_ip = dst_ip.octets();
 
         if debug {
             print!("Buffer: [ ");
@@ -111,7 +121,7 @@ impl Arp {
 
         eth_header.dest = dst_mac.to();
 
-        eth_header.source = self.get_src_mac().to();
+        eth_header.source = self.socket.get_src_mac().to();
         arp_header.target_mac = dst_mac.to();
         arp_header.sender_mac = src_mac.to();
 
@@ -218,10 +228,7 @@ impl Arp {
         Self::read_arp
     }
 
-    pub fn get_src_ip(&self) -> &Ipv4 {
-        self.socket.get_src_ip()
-    }
-    pub fn get_src_mac(&self) -> &Mac {
-        self.socket.get_src_mac()
-    }
+    getters!(
+        pub get_socket(socket) -> Socket;
+    );
 }

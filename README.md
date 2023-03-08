@@ -18,6 +18,7 @@ Crate for raw socketing, can send raw packets and some protocols
 - Automated destruction, made destruct methods private to avoid memory leaks from user
 - Fixed raw socket read timeout error
 - Replaced windows Socket creation guid with index which you can get easier by using "route print"
+- Created new crate for utils `curaum`
 
 ## Links
 - [x] docs.rs - https://docs.rs/cursock

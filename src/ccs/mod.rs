@@ -41,7 +41,13 @@ extern "C" {
 #[link(name = "iphlpapi", kind = "static")]
 #[cfg(target_os = "windows")]
 extern "system" {
-    pub fn GetAdaptersInfo(adapterinfo: *mut IP_ADAPTER_INFO, sizepointer: *mut u32) -> u32;
+    pub fn GetAdaptersAddresses(
+        family: u32,
+        flags: u32,
+        reserved: *mut std::os::raw::c_void,
+        adapter_addresses: *mut IP_ADAPTER_ADDRESSES,
+        size: *mut u32
+    ) -> u32;
     pub fn CreateUnicastIpAddressEntry(row: *const MIB_UNICASTIPADDRESS_ROW) -> u32;
     pub fn InitializeUnicastIpAddressEntry(row: *mut MIB_UNICASTIPADDRESS_ROW);
 }
@@ -88,6 +94,7 @@ extern "C" {
     pub fn WintunReleaseReceivePacket(session: WintunSessionHandle, buffer: *const u8);
     pub fn WintunGetAdapterLUID(adapter: WintunAdapterHandle, luid: *mut u64);
     pub fn WintunSendPacket(session: WintunSessionHandle, packet: *mut u8);
+    pub fn WintunGetAdapterIndex(adapter: WintunAdapterHandle) -> u32;
     pub fn WintunOpenAdapter(name: *const u16) -> WintunAdapterHandle;
     pub fn WintunCloseAdapter(adapter: WintunAdapterHandle);
     pub fn WintunEndSession(session: WintunSessionHandle);

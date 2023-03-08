@@ -1,9 +1,14 @@
 #![allow(non_upper_case_globals)]
 
+pub const AF_INET: i32 = 2;
 #[cfg(target_os = "linux")]
 pub const AF_PACKET: i32 = 17;
 #[cfg(target_os = "linux")]
+pub const AF_INET6: i32 = 10;
+#[cfg(target_os = "linux")]
 pub const SOCK_RAW: i32 = 3;
+#[cfg(target_os = "linux")]
+pub const SOCK_DGRAM: i32 = 2;
 #[cfg(target_os = "linux")]
 pub const ETH_P_ARP: i32 = 0x0806;
 #[cfg(target_os = "linux")]
@@ -27,13 +32,15 @@ pub const IFF_TUN: i32 = 1;
 #[cfg(target_os = "linux")]
 pub const TUNSETIFF: i32 = 1074025674;
 #[cfg(target_os = "windows")]
+pub const AF_UNSPEC: i32 = 0;
+#[cfg(target_os = "windows")]
+pub const AF_INET6: i32 = 23;
+#[cfg(target_os = "windows")]
 pub const ERROR_SUCCESS: u32 = 0;
 #[cfg(target_os = "windows")]
 pub const ERROR_OBJECT_ALREADY_EXISTS: u32 = 5010;
 #[cfg(target_os = "windows")]
 pub const IpDadStatePreferred: i32 = 4;
-#[cfg(target_os = "windows")]
-pub const AF_INET: i32 = 2;
 #[cfg(target_os = "windows")]
 pub const PCAP_OPENFLAG_PROMISCUOUS: i32 = 1;
 #[cfg(target_os = "windows")]
