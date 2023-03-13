@@ -4,9 +4,9 @@ version = 3
 
 [[package]]
 name = "curerr"
-version = "1.0.1"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36c5d1c6c8dfdd8161142b64736ed592cc640bd4e4f03c451277a4a29622e704"
+checksum = "d5afd7f67f89acacaa6428dcfc9ff7d6dd34037460a62f417f657143603f089f"
 
 [[package]]
 name = "curmacro"

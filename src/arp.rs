@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::*;
 
 /// arp protocol implementation
@@ -42,7 +40,7 @@ impl Arp {
 
         Err(
             CursedErrorHandle::new(
-                CursedError::InvalidArgument,
+                CursedError::Input(CursedErrorType::Invalid),
                 format!("since {} interface has no ipv4 addresses we can\'t use arp", interface)
             )
         )
@@ -74,7 +72,7 @@ impl Arp {
         eth_header.proto = (ARP_PROTO as u16).to_be();
 
         arp_header.hardware_type = (HW_TYPE as u16).to_be();
-        arp_header.protocol_type = (IP_PROTO as u16).to_be();
+        arp_header.protocol_type = (IPV4_PROTO as u16).to_be();
         arp_header.hardware_len = MAC_LEN as u8;
         arp_header.protocol_len = IPV4_LEN as u8;
         arp_header.opcode = (ARP_REQUEST as u16).to_be();
@@ -128,7 +126,7 @@ impl Arp {
         eth_header.proto = (ARP_PROTO as u16).to_be();
 
         arp_header.hardware_type = (HW_TYPE as u16).to_be();
-        arp_header.protocol_type = (IP_PROTO as u16).to_be();
+        arp_header.protocol_type = (IPV4_PROTO as u16).to_be();
         arp_header.hardware_len = MAC_LEN as u8;
         arp_header.protocol_len = IPV4_LEN as u8;
         arp_header.opcode = (ARP_REPLY as u16).to_be();
@@ -159,9 +157,9 @@ impl Arp {
     /// ```
     pub fn read_arp(&self, debug: bool) -> Result<ArpResponse, CursedErrorHandle> {
         let mut arp_response: ArpResponse = ArpResponse::new(
-            Handle::from(0),
+            Ipv4Addr::from(0),
             Handle::from([0; MAC_LEN]),
-            Handle::from(0),
+            Ipv4Addr::from(0),
             Handle::from([0; MAC_LEN]),
         );
         const BUFFER_SIZE: usize = 60;
@@ -193,8 +191,8 @@ impl Arp {
 
         arp_response.set_dst_mac(Handle::from(arp_header.target_mac));
         arp_response.set_src_mac(Handle::from(arp_header.sender_mac));
-        arp_response.set_dst_ip(Handle::from(arp_header.target_ip));
-        arp_response.set_src_ip(Handle::from(arp_header.sender_ip));
+        arp_response.set_dst_ip(Ipv4Addr::from(arp_header.target_ip));
+        arp_response.set_src_ip(Ipv4Addr::from(arp_header.sender_ip));
 
         Ok(arp_response)
     }
@@ -218,7 +216,7 @@ impl Arp {
         match Self::read_arp_with_timeout(Wrapper::new(self), debug, timeout) {
             Some(result) => result,
             None => return Err(
-                CursedErrorHandle::new(CursedError::TimeOut, String::from("arp read timed out!"))
+                CursedErrorHandle::new(CursedError::Other(CursedErrorType::Timedout), String::from("arp read timed out!"))
             ),
         }
     }

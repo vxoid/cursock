@@ -1,5 +1,4 @@
 use crate::*;
-use std::time::Duration;
 
 /// icmp protocol implementation
 /// 
@@ -45,7 +44,7 @@ impl Icmp {
 
         Err(
             CursedErrorHandle::new(
-                CursedError::InvalidArgument,
+                CursedError::Input(CursedErrorType::Invalid),
                 format!("since {} interface has no ipv4 addresses we can\'t use icmpv4", interface)
             )
         )
@@ -65,7 +64,7 @@ impl Icmp {
     /// 
     /// icmp.echo(&dst, &gateway, &message, true).expect("echo error");
     /// ```
-    pub fn echo(&self, dst_ip: &Ipv4, gateway_mac: &Mac, message: &[u8], debug: bool) -> Result<(), CursedErrorHandle> {
+    pub fn echo(&self, dst_ip: &Ipv4Addr, gateway_mac: &Mac, message: &[u8], debug: bool) -> Result<(), CursedErrorHandle> {
         let buffer_len: usize = ETH_HEADER_SIZE+IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len();
         let mut buffer: Vec<u8> = vec![0; ETH_HEADER_SIZE+IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()];
 
@@ -81,14 +80,14 @@ impl Icmp {
 
         eth_header.source = self.socket.get_src_mac().to();
         eth_header.dest = gateway_mac.to();
-        eth_header.proto = (IP_PROTO as u16).to_be();
+        eth_header.proto = (IPV4_PROTO as u16).to_be();
 
         ip_header.verihl = (4 << 4) + 5; // 4 - ip version - 5 header len (20)
         ip_header.tot_len = ((IP_HEADER_SIZE+ICMP_HEADER_SIZE+message.len()) as u16).to_be();
         ip_header.ttl = 128;
         ip_header.protocol = ICMP_PROTO as u8;
         ip_header.saddr = self.ipv4.octets();
-        ip_header.daddr = dst_ip.to();
+        ip_header.daddr = dst_ip.octets();
 
         icmp_header.type_ = ICMP_ECHO_REQUEST;
         icmp_header.id = 0x0001;
@@ -148,7 +147,7 @@ impl Icmp {
                 return Err(err);
             }
         
-            if eth_header.proto != (IP_PROTO as u16).to_be() || ip_header.protocol != ICMP_PROTO as u8 {
+            if eth_header.proto != (IPV4_PROTO as u16).to_be() || ip_header.protocol != ICMP_PROTO as u8 || ip_header.verihl >> 4 != 4 {
                 continue
             }
 
@@ -185,7 +184,7 @@ impl Icmp {
         match Self::read_with_timeout(Wrapper::new(self), Wrapper::new(buffer), debug, timeout) {
             Some(result) => result,
             None => return Err(
-                CursedErrorHandle::new(CursedError::TimeOut, String::from("icmp read timed out!"))
+                CursedErrorHandle::new(CursedError::Other(CursedErrorType::Timedout), String::from("icmp read timed out!"))
             ),
         }
     }

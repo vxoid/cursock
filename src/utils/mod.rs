@@ -1,8 +1,8 @@
 use crate::*;
-#[cfg(target_os = "linux")]
-use std::ffi::CString;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+use std::net::Ipv6Addr;
 
-use std::process::Command;
+use std::process::*;
 
 #[macro_export]
 macro_rules! callback {
@@ -21,13 +21,13 @@ macro_rules! timeout {
         $vis fn $fnname($($argname: $arg,)* time: std::time::Duration) -> Option<$return> {
             use std::thread;
             use std::sync::mpsc;
-
+            
             let (tx, rx) = mpsc::channel();
 
             thread::spawn(move || {
                 let _ = tx.send($fn($(callback!($($callback, )?$argname),)*));
             });
-    
+            
             let result: $return = match rx.recv_timeout(time) {
                 Ok(result) => result,
                 Err(mpsc::RecvTimeoutError::Timeout) => return None,
@@ -39,10 +39,14 @@ macro_rules! timeout {
     };
 }
 
+
+#[cfg(target_os = "linux")]
+pub const TUN_HEADER_SIZE: usize = std::mem::size_of::<TunHeader>();
 pub const HW_TYPE: u16 = 1;
 pub const ARP_REPLY: u16 = 2;
 pub const ARP_REQUEST: u16 = 1;
-pub const IP_PROTO: u16 = 0x0800;
+pub const IPV4_PROTO: u16 = 0x0800;
+pub const IPV6_PROTO: u16 = 0x86DD;
 pub const ARP_PROTO: u16 = 0x0806;
 pub const ICMP_PROTO: u16 = 0x0001;
 pub const ICMP_ECHO_REQUEST: u8 = 8;
@@ -109,13 +113,18 @@ pub trait BinOpers {
 pub struct ArpResponse {
     src_mac: Mac,
     dst_mac: Mac,
-    src_ip: Ipv4,
-    dst_ip: Ipv4,
+    src_ip: Ipv4Addr,
+    dst_ip: Ipv4Addr,
+}
+
+/// header for setting and reading tun packet protocol for linux
+#[repr(C)]
+#[cfg(target_os = "linux")]
+pub struct TunHeader {
+    pub protocol: u32
 }
 
 /// an ip header wrapper without useless fields
-/// 
-/// 
 pub struct IpData {
     total_len: u16,
     ttl: u8,
@@ -186,6 +195,87 @@ pub enum IcmpType {
     MobileRegistrationRequest,
 }
 
+/// WinAPI common errors api
+#[cfg(target_os = "windows")]
+#[allow(non_camel_case_types)]
+#[repr(u32)]
+pub enum WinAPIError {
+    ERROR_SUCCESS = 0,
+    ERROR_INVALID_FUNCTION = 1,
+    ERROR_FILE_NOT_FOUND = 2,
+    ERROR_PATH_NOT_FOUND = 3,
+    ERROR_ACCESS_DENIED = 5,
+    ERROR_INVALID_HANDLE = 6,
+    ERROR_NOT_ENOUGH_MEMORY = 8,
+    ERROR_INVALID_DATA = 13,
+    ERROR_INVALID_PARAMETER = 87,
+    ERROR_BUFFER_OVERFLOW = 111,
+    ERROR_CALL_NOT_IMPLEMENTED = 120,
+    ERROR_INSUFFICIENT_BUFFER = 122,
+    ERROR_INVALID_NAME = 123,
+    ERROR_ALREADY_EXISTS = 183,
+    ERROR_ENVVAR_NOT_FOUND = 203,
+    ERROR_MORE_DATA = 234,
+    ERROR_OPERATION_ABORTED = 995,
+    ERROR_NO_TOKEN = 1008,
+    ERROR_DLL_INIT_FAILED = 1114,
+    ERROR_NOT_FOUND = 1168,
+    ERROR_NO_MORE_ITEMS = 259,
+}
+
+// #[allow(non_camel_case_types)]
+// #[cfg(target_os = "linux")]
+// #[repr(i32)]
+// pub enum LinuxAPIError {
+//     EPERM = 1,
+//     ENOENT = 2,
+//     EIO = 5,
+//     EBADF = 9,
+//     EAGAIN = 11,
+//     ENOMEM = 12,
+//     EACCES = 13,
+//     EFAULT = 14,
+//     ENOTDIR = 20,
+//     EINVAL = 22,
+//     ENFILE = 23,
+//     EMFILE = 24,
+//     EDEADLK = 35,
+//     EBUSY = 37,
+//     ENOTEMPTY = 39,
+//     EINTR = 4,
+//     EEXIST = 17,
+//     ESPIPE = 29,
+//     EROFS = 30,
+//     EISDIR = 21,
+//     ECHILD = 10,
+//     ENODEV = 19,
+//     ESRCH = 3,
+//     ETXTBSY = 26,
+//     ENOEXEC = 8,
+//     ENAMETOOLONG = 36,
+//     ENOSYS = 38,
+//     ELOOP = 40,
+//     ENOMSG = 42,
+//     EIDRM = 43,
+//     EOPNOTSUPP = 95,
+//     ECONNRESET = 104,
+//     ECONNABORTED = 103,
+//     ECONNREFUSED = 111,
+//     EINPROGRESS = 115,
+//     EALREADY = 114,
+//     EMSGSIZE = 90,
+//     EPROTONOSUPPORT = 93,
+//     EADDRINUSE = 98,
+//     EADDRNOTAVAIL = 99,
+//     ENETDOWN = 100,
+//     ENETUNREACH = 101,
+//     ENETRESET = 102,
+//     EHOSTUNREACH = 113,
+//     EHOSTDOWN = 112,
+//     EISCONN = 106,
+//     ENOTCONN = 107,
+// }
+
 /// bit representation
 ///
 /// # Example
@@ -242,7 +332,6 @@ impl Handle<u8> for IcmpType {
     }
 
     fn to(&self) -> u8 {
-
         match *self {
             IcmpType::SKIP => 39,
             IcmpType::Reserved => 19,
@@ -277,6 +366,289 @@ impl Handle<u8> for IcmpType {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+impl WinAPIError {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            WinAPIError::ERROR_SUCCESS => "success",
+            WinAPIError::ERROR_INVALID_FUNCTION => "invalid function",
+            WinAPIError::ERROR_FILE_NOT_FOUND => "file not found",
+            WinAPIError::ERROR_PATH_NOT_FOUND => "path not found",
+            WinAPIError::ERROR_ACCESS_DENIED => "access denied",
+            WinAPIError::ERROR_INVALID_HANDLE => "invalid handle",
+            WinAPIError::ERROR_NOT_ENOUGH_MEMORY => "not enough memory",
+            WinAPIError::ERROR_INVALID_DATA => "invalid data",
+            WinAPIError::ERROR_INVALID_PARAMETER => "invalid parameter",
+            WinAPIError::ERROR_BUFFER_OVERFLOW => "buffer overflow",
+            WinAPIError::ERROR_CALL_NOT_IMPLEMENTED => "call not implemented",
+            WinAPIError::ERROR_INSUFFICIENT_BUFFER => "insufficient buffer",
+            WinAPIError::ERROR_INVALID_NAME => "invalid name",
+            WinAPIError::ERROR_ALREADY_EXISTS => "already exists",
+            WinAPIError::ERROR_ENVVAR_NOT_FOUND => "envvar not found",
+            WinAPIError::ERROR_MORE_DATA => "more data",
+            WinAPIError::ERROR_OPERATION_ABORTED => "operation aborted",
+            WinAPIError::ERROR_NO_TOKEN => "no token",
+            WinAPIError::ERROR_DLL_INIT_FAILED => "dll init failed",
+            WinAPIError::ERROR_NOT_FOUND => "not found",
+            WinAPIError::ERROR_NO_MORE_ITEMS => "no more items",
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Into<CursedError> for WinAPIError {
+    fn into(self) -> CursedError {
+        match self {
+            WinAPIError::ERROR_SUCCESS => CursedError::NoError,
+            WinAPIError::ERROR_INVALID_FUNCTION => CursedError::Other(CursedErrorType::Invalid),
+            WinAPIError::ERROR_FILE_NOT_FOUND => CursedError::File(CursedErrorType::NotFound),
+            WinAPIError::ERROR_PATH_NOT_FOUND => CursedError::Path(CursedErrorType::NotFound),
+            WinAPIError::ERROR_ACCESS_DENIED => CursedError::Other(CursedErrorType::AccessDenied),
+            WinAPIError::ERROR_INVALID_HANDLE => CursedError::Other(CursedErrorType::Invalid),
+            WinAPIError::ERROR_NOT_ENOUGH_MEMORY => CursedError::Memory(CursedErrorType::NotEnough),
+            WinAPIError::ERROR_INVALID_DATA => CursedError::Other(CursedErrorType::Invalid),
+            WinAPIError::ERROR_INVALID_PARAMETER => CursedError::Input(CursedErrorType::Invalid),
+            WinAPIError::ERROR_BUFFER_OVERFLOW => CursedError::Buffer(CursedErrorType::Overflow),
+            WinAPIError::ERROR_CALL_NOT_IMPLEMENTED => CursedError::Other(CursedErrorType::NotImplemented),
+            WinAPIError::ERROR_INSUFFICIENT_BUFFER => CursedError::Buffer(CursedErrorType::Overflow),
+            WinAPIError::ERROR_INVALID_NAME => CursedError::Other(CursedErrorType::Invalid),
+            WinAPIError::ERROR_ALREADY_EXISTS => CursedError::Other(CursedErrorType::AlreadyExists),
+            WinAPIError::ERROR_ENVVAR_NOT_FOUND => CursedError::Envvar(CursedErrorType::NotFound),
+            WinAPIError::ERROR_MORE_DATA => CursedError::Other(CursedErrorType::NotEnough),
+            WinAPIError::ERROR_OPERATION_ABORTED => CursedError::Other(CursedErrorType::Aborted),
+            WinAPIError::ERROR_NO_TOKEN => CursedError::Other(CursedErrorType::NotFound),
+            WinAPIError::ERROR_DLL_INIT_FAILED => CursedError::Other(CursedErrorType::NotImplemented),
+            WinAPIError::ERROR_NOT_FOUND => CursedError::Other(CursedErrorType::NotFound),
+            WinAPIError::ERROR_NO_MORE_ITEMS => CursedError::Other(CursedErrorType::NotFound),
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl TryFrom<u32> for WinAPIError {
+    type Error = CursedErrorHandle;
+
+    fn try_from(code: u32) -> Result<Self, CursedErrorHandle> {
+        match code {
+            0 => Ok(WinAPIError::ERROR_SUCCESS),
+            1 => Ok(WinAPIError::ERROR_INVALID_FUNCTION),
+            2 => Ok(WinAPIError::ERROR_FILE_NOT_FOUND),
+            3 => Ok(WinAPIError::ERROR_PATH_NOT_FOUND),
+            5 => Ok(WinAPIError::ERROR_ACCESS_DENIED),
+            6 => Ok(WinAPIError::ERROR_INVALID_HANDLE),
+            8 => Ok(WinAPIError::ERROR_NOT_ENOUGH_MEMORY),
+            13 => Ok(WinAPIError::ERROR_INVALID_DATA),
+            87 => Ok(WinAPIError::ERROR_INVALID_PARAMETER),
+            111 => Ok(WinAPIError::ERROR_BUFFER_OVERFLOW),
+            120 => Ok(WinAPIError::ERROR_CALL_NOT_IMPLEMENTED),
+            122 => Ok(WinAPIError::ERROR_INSUFFICIENT_BUFFER),
+            123 => Ok(WinAPIError::ERROR_INVALID_NAME),
+            183 => Ok(WinAPIError::ERROR_ALREADY_EXISTS),
+            203 => Ok(WinAPIError::ERROR_ENVVAR_NOT_FOUND),
+            234 => Ok(WinAPIError::ERROR_MORE_DATA),
+            995 => Ok(WinAPIError::ERROR_OPERATION_ABORTED),
+            1008 => Ok(WinAPIError::ERROR_NO_TOKEN),
+            1114 => Ok(WinAPIError::ERROR_DLL_INIT_FAILED),
+            1168 => Ok(WinAPIError::ERROR_NOT_FOUND),
+            259 => Ok(WinAPIError::ERROR_NO_MORE_ITEMS),
+            _ => Err(
+                CursedErrorHandle::new(
+                    CursedError::Input(CursedErrorType::Invalid),
+                    format!("{} isn\'t common error code", code)
+                )
+            )
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl ToString for WinAPIError {
+    fn to_string(&self) -> String {
+        self.to_str().to_string()
+    }
+}
+
+
+// #[cfg(target_os = "linux")]
+// impl Into<CursedError> for LinuxAPIError {
+//     fn into(self) -> CursedError {
+//         match self {
+//             LinuxAPIError::EPERM => CursedError::Other(CursedErrorType::AccessDenied),
+//             LinuxAPIError::ENOENT => CursedError::File(CursedErrorType::NotFound),
+//             LinuxAPIError::EIO => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::EBADF => CursedError::File(CursedErrorType::Invalid),
+//             LinuxAPIError::EAGAIN => CursedError::Other(CursedErrorType::Interrupted),
+//             LinuxAPIError::ENOMEM => CursedError::Memory(CursedErrorType::NotEnough),
+//             LinuxAPIError::EACCES => CursedError::Other(CursedErrorType::AccessDenied),
+//             LinuxAPIError::EFAULT => CursedError::Address(CursedErrorType::Invalid),
+//             LinuxAPIError::ENOTDIR => CursedError::File(CursedErrorType::NotFound),
+//             LinuxAPIError::EINVAL => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::ENFILE => CursedError::File(CursedErrorType::Refused),
+//             LinuxAPIError::EMFILE => CursedError::File(CursedErrorType::Refused),
+//             LinuxAPIError::EDEADLK => CursedError::Call(CursedErrorType::Aborted),
+//             LinuxAPIError::EBUSY => CursedError::Other(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::ENOTEMPTY => CursedError::Data(CursedErrorType::Invalid),
+//             LinuxAPIError::EINTR => CursedError::Call(CursedErrorType::Interrupted),
+//             LinuxAPIError::EEXIST => CursedError::Other(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::ESPIPE => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::EROFS => CursedError::Call(CursedErrorType::NotImplemented),
+//             LinuxAPIError::EISDIR => CursedError::File(CursedErrorType::NotFound),
+//             LinuxAPIError::ECHILD => CursedError::Call(CursedErrorType::Interrupted),
+//             LinuxAPIError::ENODEV => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::ESRCH => CursedError::Call(CursedErrorType::NotFound),
+//             LinuxAPIError::ETXTBSY => CursedError::File(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::ENOEXEC => CursedError::Call(CursedErrorType::NotImplemented),
+//             LinuxAPIError::ENAMETOOLONG => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::ENOSYS => CursedError::Other(CursedErrorType::NotImplemented),
+//             LinuxAPIError::ELOOP => CursedError::Call(CursedErrorType::Aborted),
+//             LinuxAPIError::ENOMSG => CursedError::Data(CursedErrorType::NotEnough),
+//             LinuxAPIError::EIDRM => CursedError::Input(CursedErrorType::Invalid),
+//             LinuxAPIError::EOPNOTSUPP => CursedError::Call(CursedErrorType::NotSupported),
+//             LinuxAPIError::ECONNRESET => CursedError::Connection(CursedErrorType::Reset),
+//             LinuxAPIError::ECONNABORTED => CursedError::Connection(CursedErrorType::Aborted),
+//             LinuxAPIError::ECONNREFUSED => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::EINPROGRESS => CursedError::Call(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::EALREADY => CursedError::Other(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::EMSGSIZE => CursedError::Buffer(CursedErrorType::Overflow),
+//             LinuxAPIError::EPROTONOSUPPORT => CursedError::Input(CursedErrorType::NotSupported),
+//             LinuxAPIError::EADDRINUSE => CursedError::Address(CursedErrorType::AlreadyExists),
+//             LinuxAPIError::EADDRNOTAVAIL => CursedError::Address(CursedErrorType::NotFound),
+//             LinuxAPIError::ENETDOWN => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::ENETUNREACH => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::ENETRESET => CursedError::Connection(CursedErrorType::Reset),
+//             LinuxAPIError::EHOSTUNREACH => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::EHOSTDOWN => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::EISCONN => CursedError::Connection(CursedErrorType::Refused),
+//             LinuxAPIError::ENOTCONN => CursedError::Connection(CursedErrorType::Refused),
+//         }
+//     }
+// }
+
+// #[cfg(target_os = "linux")]
+// impl LinuxAPIError {
+//     pub fn to_str(&self) -> &'static str {
+//         match self {
+//             LinuxAPIError::EPERM => "permission",
+//             LinuxAPIError::ENOENT => "file not found",
+//             LinuxAPIError::EIO => "io",
+//             LinuxAPIError::EBADF => "bad file descriptor",
+//             LinuxAPIError::EAGAIN => "temporarily unavailable",
+//             LinuxAPIError::ENOMEM => "not enough memory",
+//             LinuxAPIError::EACCES => "access",
+//             LinuxAPIError::EFAULT => "invalid address",
+//             LinuxAPIError::ENOTDIR => "not a directory",
+//             LinuxAPIError::EINVAL => "invalid argument",
+//             LinuxAPIError::ENFILE => "too many open files in system",
+//             LinuxAPIError::EMFILE => "too many open files",
+//             LinuxAPIError::EDEADLK => "deadlock",
+//             LinuxAPIError::EBUSY => "in use",
+//             LinuxAPIError::ENOTEMPTY => "not empty",
+//             LinuxAPIError::EINTR => "interrupted",
+//             LinuxAPIError::EEXIST => "already exists",
+//             LinuxAPIError::ESPIPE => "illegal seek",
+//             LinuxAPIError::EROFS => "read-only fs",
+//             LinuxAPIError::EISDIR => "is a directory",
+//             LinuxAPIError::ECHILD => "child",
+//             LinuxAPIError::ENODEV => "no such device",
+//             LinuxAPIError::ESRCH => "no such process",
+//             LinuxAPIError::ETXTBSY => "text file is busy",
+//             LinuxAPIError::ENOEXEC => "no executable",
+//             LinuxAPIError::ENAMETOOLONG => "name too long",
+//             LinuxAPIError::ENOSYS => "not implemented",
+//             LinuxAPIError::ELOOP => "too many symbolic links",
+//             LinuxAPIError::ENOMSG => "no message of desired type",
+//             LinuxAPIError::EIDRM => "identifier removed",
+//             LinuxAPIError::EOPNOTSUPP => "operation not supported",
+//             LinuxAPIError::ECONNRESET => "connection reset",
+//             LinuxAPIError::ECONNABORTED => "connection aborted",
+//             LinuxAPIError::ECONNREFUSED => "connection refused",
+//             LinuxAPIError::EINPROGRESS => "in progress",
+//             LinuxAPIError::EALREADY => "already exists",
+//             LinuxAPIError::EMSGSIZE => "message too large",
+//             LinuxAPIError::EPROTONOSUPPORT => "protocol not supported",
+//             LinuxAPIError::EADDRINUSE => "address in use",
+//             LinuxAPIError::EADDRNOTAVAIL => "address not available",
+//             LinuxAPIError::ENETDOWN => "network down",
+//             LinuxAPIError::ENETUNREACH => "network unreachable",
+//             LinuxAPIError::ENETRESET => "network reset",
+//             LinuxAPIError::EHOSTUNREACH => "host unreachable",
+//             LinuxAPIError::EHOSTDOWN => "host down",
+//             LinuxAPIError::EISCONN => "already connected",
+//             LinuxAPIError::ENOTCONN => "not connected",
+//         }
+//     }
+// }
+
+// #[cfg(target_os = "linux")]
+// impl TryFrom<i32> for LinuxAPIError {
+//     type Error = CursedErrorHandle;
+
+//     fn try_from(code: i32) -> Result<Self, CursedErrorHandle> {
+//         match code {
+//             1 => Ok(LinuxAPIError::EPERM),
+//             2 => Ok(LinuxAPIError::ENOENT),
+//             5 => Ok(LinuxAPIError::EIO),
+//             9 => Ok(LinuxAPIError::EBADF),
+//             11 => Ok(LinuxAPIError::EAGAIN),
+//             12 => Ok(LinuxAPIError::ENOMEM),
+//             13 => Ok(LinuxAPIError::EACCES),
+//             14 => Ok(LinuxAPIError::EFAULT),
+//             20 => Ok(LinuxAPIError::ENOTDIR),
+//             22 => Ok(LinuxAPIError::EINVAL),
+//             23 => Ok(LinuxAPIError::ENFILE),
+//             24 => Ok(LinuxAPIError::EMFILE),
+//             35 => Ok(LinuxAPIError::EDEADLK),
+//             37 => Ok(LinuxAPIError::EBUSY),
+//             39 => Ok(LinuxAPIError::ENOTEMPTY),
+//             4 => Ok(LinuxAPIError::EINTR),
+//             17 => Ok(LinuxAPIError::EEXIST),
+//             29 => Ok(LinuxAPIError::ESPIPE),
+//             30 => Ok(LinuxAPIError::EROFS),
+//             21 => Ok(LinuxAPIError::EISDIR),
+//             10 => Ok(LinuxAPIError::ECHILD),
+//             19 => Ok(LinuxAPIError::ENODEV),
+//             3 => Ok(LinuxAPIError::ESRCH),
+//             26 => Ok(LinuxAPIError::ETXTBSY),
+//             8 => Ok(LinuxAPIError::ENOEXEC),
+//             36 => Ok(LinuxAPIError::ENAMETOOLONG),
+//             38 => Ok(LinuxAPIError::ENOSYS),
+//             40 => Ok(LinuxAPIError::ELOOP),
+//             42 => Ok(LinuxAPIError::ENOMSG),
+//             43 => Ok(LinuxAPIError::EIDRM),
+//             95 => Ok(LinuxAPIError::EOPNOTSUPP),
+//             104 => Ok(LinuxAPIError::ECONNRESET),
+//             103 => Ok(LinuxAPIError::ECONNABORTED),
+//             111 => Ok(LinuxAPIError::ECONNREFUSED),
+//             115 => Ok(LinuxAPIError::EINPROGRESS),
+//             114 => Ok(LinuxAPIError::EALREADY),
+//             90 => Ok(LinuxAPIError::EMSGSIZE),
+//             93 => Ok(LinuxAPIError::EPROTONOSUPPORT),
+//             98 => Ok(LinuxAPIError::EADDRINUSE),
+//             99 => Ok(LinuxAPIError::EADDRNOTAVAIL),
+//             100 => Ok(LinuxAPIError::ENETDOWN),
+//             101 => Ok(LinuxAPIError::ENETUNREACH),
+//             102 => Ok(LinuxAPIError::ENETRESET),
+//             113 => Ok(LinuxAPIError::EHOSTUNREACH),
+//             112 => Ok(LinuxAPIError::EHOSTDOWN),
+//             106 => Ok(LinuxAPIError::EISCONN),
+//             107 => Ok(LinuxAPIError::ENOTCONN),
+//             _ => Err(
+//                 CursedErrorHandle::new(
+//                     CursedError::Input(CursedErrorType::Invalid),
+//                     format!("{} isn\'t common linux api code", code)
+//                 )
+//             ),
+//         }
+//     }
+// }
+
+// #[cfg(target_os = "linux")]
+// impl ToString for LinuxAPIError {
+//     fn to_string(&self) -> String {
+//         self.to_str().to_string()
+//     }
+// }
 
 impl IpData {
     pub fn new(total_len: u16, ttl: u8, src: Ipv4, dst: Ipv4) -> Self {
@@ -372,8 +744,26 @@ impl BinOpers for u32 {
     }
 }
 
+impl BinOpers for u8 {
+    fn get_bit(&self, index: usize) -> Bit {
+        Handle::from((self.clone() >> index & 1) as u8)
+    }
+    fn set_bit(&self, value: Bit, index: usize) -> Self {
+        match value {
+            Bit::One => {
+                let mask: Self = 1;
+                self.clone() | (mask << index)
+            }
+            Bit::Zero => {
+                let mask: Self = 1;
+                self.clone() & !(mask << index)
+            }
+        }
+    }
+}
+
 impl ArpResponse {
-    pub fn new(src_ip: Ipv4, src_mac: Mac, dst_ip: Ipv4, dst_mac: Mac) -> Self {
+    pub fn new(src_ip: Ipv4Addr, src_mac: Mac, dst_ip: Ipv4Addr, dst_mac: Mac) -> Self {
         Self {
             src_ip,
             src_mac,
@@ -384,25 +774,36 @@ impl ArpResponse {
 
     getters!(
         pub get_src_mac(src_mac) -> Mac;
-        pub get_src_ip(src_ip) -> Ipv4;
+        pub get_src_ip(src_ip) -> Ipv4Addr;
         pub get_dst_mac(dst_mac) -> Mac;
-        pub get_dst_ip(dst_ip) -> Ipv4;
+        pub get_dst_ip(dst_ip) -> Ipv4Addr;
     );
     setters!(
         pub set_src_mac(Mac) -> src_mac;
-        pub set_src_ip(Ipv4) -> src_ip;
+        pub set_src_ip(Ipv4Addr) -> src_ip;
         pub set_dst_mac(Mac) -> dst_mac;
-        pub set_dst_ip(Ipv4) -> dst_ip;
+        pub set_dst_ip(Ipv4Addr) -> dst_ip;
     );
 }
 
-pub fn run_queries(queries: &[&[&str]], program: &str) -> Result<(), CursedErrorHandle> {
+pub fn run_queries(queries: &[(&str, &str)], program: &str) -> Result<(), CursedErrorHandle> {
     for query in queries {
-        if let Err(err) = Command::new(program).args(*query).output() {
+        let output: Output = match Command::new(program).args([query.0, query.1]).output() {
+            Ok(output) => output,
+            Err(err) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t run command due to \"{}\"", err.to_string())
+                )
+            )
+        };
+
+        let err: Vec<u8> = output.stderr;
+        if err.len() > 0 {
             return Err(
                 CursedErrorHandle::new(
-                    CursedError::Sockets,
-                    format!("can\'t run command due to \"{}\"", err.to_string())
+                    CursedError::Input(CursedErrorType::Invalid),
+                    format!("\"{}\" execution ended with \"{}\"", query.1, str_from_bytes(&err))
                 )
             );
         }
@@ -428,7 +829,7 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
     let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
     let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_ADDRESSES;
 
-    let err: u32 = unsafe {
+    let result: u32 = unsafe {
         ccs::GetAdaptersAddresses(
             ccs::AF_UNSPEC as u32,
             0,
@@ -438,11 +839,22 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
         )
     };
 
-    if err != ccs::ERROR_SUCCESS {
+    if result != ccs::ERROR_SUCCESS {
+        let err: WinAPIError = match WinAPIError::try_from(result) {
+            Ok(err) => err,
+            Err(_) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Unknown,
+                    format!("can\'t get adapter addresses due to {} win api error", result)
+                )
+            ),
+        };
+        let message: &str = err.to_str();
+
         return Err(
             CursedErrorHandle::new(
-                CursedError::OS,
-                "can\'t get adapter addresses".to_string()
+                err.into(),
+                format!("can\'t get adapter addresses due to {} ({}) win api error", message, result)
             )
         );
     }
@@ -504,7 +916,7 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
         Some(data) => data,
         None => return Err(
             CursedErrorHandle::new(
-                CursedError::InvalidArgument,
+                CursedError::Input(CursedErrorType::Invalid),
                 format!("{} isn\'t valid adapter index", index)
             )
         ),
@@ -541,10 +953,21 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
     };
 
     if err != ccs::ERROR_SUCCESS {
+        let err: WinAPIError = match WinAPIError::try_from(err) {
+            Ok(err) => err,
+            Err(_) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Unknown,
+                    format!("can\'t get adapter addresses due to {} win api error", err)
+                )
+            ),
+        };
+        let message: &str = err.to_str();
+
         return Err(
             CursedErrorHandle::new(
-                CursedError::OS,
-                "can\'t get adapter addresses".to_string()
+                err.into(),
+                format!("can\'t get adapter addresses due to {} win api error", message)
             )
         );
     }
@@ -606,7 +1029,7 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
         Some(data) => data,
         None => return Err(
             CursedErrorHandle::new(
-                CursedError::InvalidArgument,
+                CursedError::Input(CursedErrorType::Invalid),
                 format!("{} isn\'t valid adapter guid", guid)
             )
         ),
@@ -616,10 +1039,91 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
 }
 
 #[cfg(target_os = "linux")]
-pub fn get_interface_info(
-    interface: &str,
-    debug: bool,
-) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32), CursedErrorHandle> {
+pub fn get_interface_info(interface: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32), CursedErrorHandle> {
+    let mut addrs: *mut ccs::ifaddrs = ccs::null_mut();
+
+    let result: i32 = unsafe {
+        ccs::getifaddrs(&mut addrs)
+    };
+
+    if result < 0 {
+        let err: io::Error = io::Error::last_os_error();
+    
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::from(err.kind()),
+                format!("can\'t get interfaces due to {} error", err.to_string()),
+            )
+        );
+    }
+
+    let mut current: *mut ccs::ifaddrs = addrs;
+    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32)> = None;
+    
+    while !current.is_null() {
+        let r_current: &mut ccs::ifaddrs = unsafe {
+            &mut *current
+        };
+
+        println!("{}", str_from_cstr(r_current.ifa_name));
+        if str_from_cstr(r_current.ifa_name) == interface {            
+            let mut ipv4: Option<Ipv4Addr> = None;
+            let mut ipv6: Option<Ipv6Addr> = None;
+
+            let (mac, index): (Mac, i32) = get_ifr_info(interface)?;
+            while !current.is_null() {
+                let r_current: &mut ccs::ifaddrs = unsafe {
+                    &mut *current
+                };
+                let family: i32 = unsafe {
+                    (*r_current.ifa_addr).sa_family as i32
+                };
+
+                match family {
+                    ccs::AF_INET => {
+                        let addr: &mut ccs::sockaddr_in = unsafe {
+                            &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in)
+                        };
+                        
+                        println!("{}", Ipv4Addr::from(addr.sin_addr.s_addr));
+                        ipv4 = Some(Ipv4Addr::from(addr.sin_addr.s_addr))
+                    },
+                    ccs::AF_INET6 => {
+                        let addr: &mut ccs::sockaddr_in6 = unsafe {
+                            &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in6)
+                        };
+                        
+                        println!("{}", Ipv6Addr::from(addr.sin6_addr.s6_addr));
+                        ipv6 = Some(Ipv6Addr::from(addr.sin6_addr.s6_addr))
+                    },
+                    _ => {}
+                }
+
+                current = r_current.ifa_next
+            }
+
+            data = Some((ipv4, ipv6, mac, index))
+        }
+
+        current = r_current.ifa_next
+    }
+    unsafe { ccs::freeifaddrs(addrs) }
+
+    let data: (Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32) = match data {
+        Some(data) => data,
+        None => return Err(
+            CursedErrorHandle::new(
+                CursedError::Input(CursedErrorType::Invalid),
+                format!("{} isn\'t valid interface name", interface)
+            )
+        ),
+    };
+
+    Ok(data)
+}
+
+#[cfg(target_os = "linux")]
+pub fn get_ifr_info(interface: &str) -> Result<(Mac, i32), CursedErrorHandle> {
     let socket: i32 = unsafe {
         ccs::socket(
             ccs::AF_INET,
@@ -629,13 +1133,12 @@ pub fn get_interface_info(
     };
 
     if socket < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
+        let err: io::Error = io::Error::last_os_error();
+    
         return Err(
             CursedErrorHandle::new(
-                CursedError::Initialize,
-                format!("Can\'t initialize socket ({} < 0)", socket),
+                CursedError::from(err.kind()),
+                format!("can\'t init socket due to {} error", err.to_string()),
             )
         );
     }
@@ -644,7 +1147,7 @@ pub fn get_interface_info(
         Ok(interface) => interface,
         Err(err) => {
             return Err(CursedErrorHandle::new(
-                CursedError::Parse,
+                CursedError::Data(CursedErrorType::Parse),
                 format!(
                     "{} is not valid c string can\'t convert it due to {}",
                     interface,
@@ -666,54 +1169,27 @@ pub fn get_interface_info(
         interface.as_bytes_with_nul().len(),
     );
 
-    let index: i32 = get_interface_index(socket, &mut if_request, debug)?;
-    let mac: Mac = get_interface_mac(socket, &mut if_request, debug)?;
-    let ipv4: Option<Ipv4Addr> = match get_interface_ipv4(socket, &mut if_request, debug) {
-        Ok(ipv4) => Some(ipv4),
-        Err(_) => None,
-    };
+    let mac: Mac = get_ifr_mac(socket, &mut if_request)?;
+    let index: i32 = get_ifr_index(socket, &mut if_request)?;
+
     unsafe { ccs::close(socket); }
 
-    let socket: i32 = unsafe {
-        ccs::socket(
-            ccs::AF_INET6,
-            ccs::SOCK_DGRAM,
-            0,
-        )
-    };
-    if socket < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
-        return Err(
-            CursedErrorHandle::new(
-                CursedError::Initialize,
-                format!("Can\'t initialize socket ({} < 0)", socket),
-            )
-        );
-    }
-
-    let ipv6: Option<Ipv6Addr> = match get_interface_ipv6(socket, &mut if_request, debug) {
-        Ok(ipv6) => Some(ipv6),
-        Err(_) => None,
-    };
-    unsafe { ccs::close(socket); }
-
-    Ok((ipv4, ipv6, mac, index))
+    Ok((mac, index))
 }
 
 #[cfg(target_os = "linux")]
-fn get_interface_index(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<i32, CursedErrorHandle> {
-    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFINDEX, ifr) };
+fn get_ifr_index(socket: i32, ifr: *mut ccs::ifreq) -> Result<i32, CursedErrorHandle> {
+    let result: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFINDEX, ifr) };
 
-    if err < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            String::from("Got error while getting SIOCGIFINDEX"),
-        ));
+    if result < 0 {
+        let err: io::Error = io::Error::last_os_error();
+    
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::from(err.kind()),
+                format!("can\'t get if index due to {} error", err.to_string()),
+            )
+        );
     }
 
     let index: i32 = unsafe { (*ifr).ifr_ifru.ifru_ifindex.clone() };
@@ -721,69 +1197,72 @@ fn get_interface_index(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result
     Ok(index)
 }
 
+// #[cfg(target_os = "linux")]
+// fn get_interface_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> Result<Ipv4Addr, CursedErrorHandle> {
+//     let result: i32;
+
+//     result = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+
+//     if result < 0 {
+//         let err: io::Error = io::Error::last_os_error();
+    
+//         return Err(
+//             CursedErrorHandle::new(
+//                 CursedError::from(err.kind()),
+//                 format!("can\'t get if ipv4 due to {} error", err.to_string()),
+//             )
+//         );
+//     }
+
+//     let addr: *const ccs::sockaddr_in =
+//         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
+//     let mut ip: [u8; IPV4_LEN] = [0; IPV4_LEN];
+
+//     memcpy(
+//         ip.as_mut_ptr(),
+//         unsafe { &(*addr).sin_addr.s_addr },
+//         std::mem::size_of::<[u8; IPV4_LEN]>(),
+//     );
+
+//     Ok(Ipv4Addr::from(ip))
+// }
+
+// #[cfg(target_os = "linux")]
+// fn get_interface_ipv6(socket: i32, ifr: *mut ccs::ifreq) -> Result<Ipv6Addr, CursedErrorHandle> {
+//     let result: i32;
+
+//     result = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+
+//     if result < 0 {
+//         let err: io::Error = io::Error::last_os_error();
+    
+//         return Err(
+//             CursedErrorHandle::new(
+//                 CursedError::from(err.kind()),
+//                 format!("can\'t open tun adapter due to {} error", err.to_string()),
+//             )
+//         );
+//     }
+
+//     let addr: *const ccs::sockaddr_in6 =
+//         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in6;
+
+//     Ok(Ipv6Addr::from(unsafe { (*addr).sin6_addr.s6_addr }))
+// }
+
 #[cfg(target_os = "linux")]
-fn get_interface_ipv4(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv4Addr, CursedErrorHandle> {
-    let err: i32;
+fn get_ifr_mac(socket: i32, ifr: *mut ccs::ifreq) -> Result<Mac, CursedErrorHandle> {
+    let result: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFHWADDR, ifr) };
 
-    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
-
-    if err < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            String::from("Got error while getting SIOCGIFADDR"),
-        ));
-    }
-
-    let addr: *const ccs::sockaddr_in =
-        unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
-    let mut ip: [u8; IPV4_LEN] = [0; IPV4_LEN];
-
-    memcpy(
-        ip.as_mut_ptr(),
-        unsafe { &(*addr).sin_addr.s_addr },
-        std::mem::size_of::<[u8; IPV4_LEN]>(),
-    );
-
-    Ok(Ipv4Addr::from(ip))
-}
-
-#[cfg(target_os = "linux")]
-fn get_interface_ipv6(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Ipv6Addr, CursedErrorHandle> {
-    let err: i32;
-
-    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
-
-    if err < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            String::from("Got error while getting SIOCGIFADDR"),
-        ));
-    }
-
-    let addr: *const ccs::sockaddr_in6 =
-        unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in6;
-
-    Ok(Ipv6Addr::from(unsafe { (*addr).sin6_addr.s6_addr }))
-}
-
-#[cfg(target_os = "linux")]
-fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<Mac, CursedErrorHandle> {
-    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFHWADDR, ifr) };
-
-    if err < 0 {
-        if debug {
-            unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-        }
-        return Err(CursedErrorHandle::new(
-            CursedError::Sockets,
-            String::from("Got error while getting SIOCGIFHWADDR"),
-        ));
+    if result < 0 {
+        let err: io::Error = io::Error::last_os_error();
+    
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::from(err.kind()),
+                format!("can\'t get if mac due to {} error", err.to_string()),
+            )
+        );
     }
 
     let sa_data: [i8; 14] = unsafe { (*ifr).ifr_ifru.ifru_hwaddr.sa_data };
@@ -797,4 +1276,191 @@ fn get_interface_mac(socket: i32, ifr: *mut ccs::ifreq, debug: bool) -> Result<M
     );
 
     Ok(Handle::from(mac))
+}
+
+
+pub fn virtual_ip(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    #[cfg(target_os = "linux")]
+    {
+        virtual_ip_linux(interface, addr, prefix)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        virtual_ip_windows(interface, addr, prefix)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = addr;
+        let _ = prefix;
+        let _ = interface;
+        
+        Err(CursedErrorHandle::new(
+            CursedError::Other(CursedErrorType::NotSupported),
+            format!("{} is not supported yet!", std::env::consts::OS),
+        ))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    let index: u32 = match interface.parse() {
+        Ok(index) => index,
+        Err(err) => return Err(
+            CursedErrorHandle::new(
+                CursedError::Data(CursedErrorType::Parse),
+                format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
+            )
+        ),
+    };
+
+    let address: ccs::SOCKADDR_INET = match addr {
+        IpAddr::V4(ipv4) => {
+            let sockaddr: ccs::sockaddr_in = ccs::sockaddr_in {
+                sin_family: ccs::AF_INET as i16,
+                sin_port: 0,
+                sin_addr: ccs::in_addr { s_addr: ipv4.octets() },
+                sin_zero: [0; 8]
+            };
+
+            ccs::SOCKADDR_INET { ipv4: sockaddr }
+        },
+        IpAddr::V6(ipv6) => {
+            let sockaddr: ccs::sockaddr_in6 = ccs::sockaddr_in6 {
+                sin6_family: ccs::AF_INET6 as i16,
+                sin6_port: 0,
+                sin6_flowinfo: 0,
+                sin6_addr: ccs::in6_addr { s6_addr: ipv6.octets() },
+                sin6_scope_id: 0
+            };
+
+            ccs::SOCKADDR_INET { ipv6: sockaddr }
+        },
+    };
+
+    let unicast: ccs::MIB_UNICASTIPADDRESS_ROW = ccs::MIB_UNICASTIPADDRESS_ROW {
+        address,
+        luid: 0,
+        index,
+        prefix_origin: 0x01,
+        suffix_origin: 0x01,
+        valid_lifetime: 3600,
+        preferred_lifetime: 1800,
+        on_link_prefix_length: prefix,
+        skip_as_source: 0,
+        dad_state: 0,
+        scope_id: 0,
+        timestamp: 0
+    };
+
+    let result: u32 = unsafe {
+        ccs::CreateUnicastIpAddressEntry(&unicast)
+    };
+    if result != 0 {
+        let err: WinAPIError = match WinAPIError::try_from(result) {
+            Ok(err) => err,
+            Err(_) => todo!(),
+        };
+        let message: &str = err.to_str();
+
+        return Err(
+            CursedErrorHandle::new(
+                err.into(),
+                format!("got {} ({}) error while creating virtual ip", message, result)
+            )
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn virtual_ip_linux(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    let query: String = format!("ip addr add {}/{} dev \"{}\"", addr, prefix, interface);
+
+    run_queries(&[("-c", &query)], "sh")
+}
+
+pub fn delete_ip(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    #[cfg(target_os = "linux")]
+    {
+        delete_ip_linux(interface, addr, prefix)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        delete_ip_windows(interface, addr, prefix)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = addr;
+        let _ = prefix;
+        let _ = interface;
+        
+        Err(CursedErrorHandle::new(
+            CursedError::Other(CursedErrorType::NotSupported),
+            format!("{} is not supported yet!", std::env::consts::OS),
+        ))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn delete_ip_linux(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    let query: String = format!("ip addr del {}/{} dev {}", addr, prefix, interface);
+
+    run_queries(&[("-c", &query)], "sh")
+}
+
+#[cfg(target_os = "windows")]
+fn delete_ip_windows(interface: &str, addr: &IpAddr, _: u8) -> Result<(), CursedErrorHandle> {
+    let query: String = match addr {
+        IpAddr::V4(ipv4) => format!("netsh interface ipv4 delete address \"{}\" {}", interface, ipv4),
+        IpAddr::V6(ipv6) => format!("netsh interface ipv6 delete address \"{}\" {}", interface, ipv6),
+    };
+
+    run_queries(&[("/C", &query)], "cmd")
+}
+
+#[cfg(target_os = "windows")]
+pub fn log(code: Option<u32>) -> Result<String, CursedErrorHandle> {
+    match code {
+        Some(code) => match log_code(code) {
+            Ok(message) => return Ok(message),
+            Err(_) => {},
+        },
+        None => {},
+    }
+    
+    let code: u32 = unsafe {
+        ccs::GetLastError()
+    };
+
+    log_code(code)
+}
+
+#[cfg(target_os = "windows")]
+fn log_code(code: u32) -> Result<String, CursedErrorHandle> {
+    let system: *mut u16 = ccs::null_mut();
+
+    let result: u32 = unsafe { ccs::FormatMessageW(
+            ccs::FORMAT_MESSAGE_FROM_SYSTEM | ccs::FORMAT_MESSAGE_ALLOCATE_BUFFER |
+            ccs::FORMAT_MESSAGE_MAX_WIDTH_MASK,
+            ccs::null(),
+            code,
+            0x0800,
+            system,
+            0,
+            ccs::null_mut()
+    ) };
+
+    if system as usize == 0 || result == 0 {
+        return Err(
+            CursedErrorHandle::new(
+                CursedError::Buffer(CursedErrorType::Overflow),
+                "no error message".to_string()
+            )
+        );
+    }
+
+    Ok(str_from_cutf16(system))
 }

@@ -1,4 +1,3 @@
-use std::time::Duration;
 #[cfg(target_os = "windows")]
 use std::ffi::CString;
 
@@ -58,7 +57,7 @@ impl Socket {
             let _ = prefered;
             let _ = interface;
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -86,7 +85,7 @@ impl Socket {
             let _ = buffer;
             let _ = debug;
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -114,7 +113,7 @@ impl Socket {
             let _ = buffer;
             let _ = debug;
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -128,7 +127,10 @@ impl Socket {
         match Self::read_timeout(Wrapper::new(self), Wrapper::new(buffer), debug, timeout) {
             Some(result) => result,
             None => return Err(
-                CursedErrorHandle::new(CursedError::TimeOut, String::from("socket read timed out!"))
+                CursedErrorHandle::new(
+                    CursedError::Other(CursedErrorType::Timedout),
+                    String::from("socket read timed out!")
+                )
             ),
         }
     }
@@ -158,16 +160,17 @@ impl Socket {
         };
 
         if socket < 0 {
-            if debug {
-                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-            }
-            return Err(CursedErrorHandle::new(
-                CursedError::Initialize,
-                format!("Can\'t initialize socket ({} < 0)", socket),
-            ));
+            let err: io::Error = io::Error::last_os_error();
+    
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t init socket to {} error", err.to_string()),
+                )
+            );
         }
 
-        let (ipv4, ipv6, src_mac, index) = get_interface_info(interface, debug)?;
+        let (ipv4, ipv6, src_mac, index) = get_interface_info(interface)?;
         let src_ip: IpAddr = {
             match prefered {
                 IpVersions::V4 => {
@@ -178,7 +181,7 @@ impl Socket {
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::NotEnought,
+                                CursedError::Address(CursedErrorType::NotEnough),
                                 format!("{} interface has no ipv4 or ipv6 addresses", interface)
                             )
                         );
@@ -192,7 +195,7 @@ impl Socket {
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::NotEnought,
+                                CursedError::Address(CursedErrorType::NotEnough),
                                 format!("{} interface has no ipv4 or ipv6 addresses", interface)
                             )
                         );
@@ -224,7 +227,7 @@ impl Socket {
             Ok(index) => index,
             Err(err) => return Err(
                 CursedErrorHandle::new(
-                    CursedError::Parse,
+                    CursedError::Data(CursedErrorType::Parse),
                     format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
                 )
             ),
@@ -241,7 +244,7 @@ impl Socket {
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::NotEnought,
+                                CursedError::Address(CursedErrorType::NotFound),
                                 format!("{} interface has no ipv4 or ipv6 addresses", index)
                             )
                         );
@@ -255,7 +258,7 @@ impl Socket {
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::NotEnought,
+                                CursedError::Address(CursedErrorType::NotFound),
                                 format!("{} interface has no ipv4 or ipv6 addresses", index)
                             )
                         );
@@ -273,7 +276,7 @@ impl Socket {
             Ok(pcap_interface) => pcap_interface,
             Err(err) => {
                 return Err(CursedErrorHandle::new(
-                    CursedError::Parse,
+                    CursedError::Data(CursedErrorType::Parse),
                     format!(
                         "{} is not valid c string can\'t convert it due to {}",
                         pcap_interface,
@@ -298,7 +301,7 @@ impl Socket {
 
         if adapter as usize == 0 {
             return Err(CursedErrorHandle::new(
-                CursedError::Sockets,
+                CursedError::Connection(CursedErrorType::Refused),
                 format!(
                     "Can\'t open adapted due to {}",
                     str_from_cstr(error_buffer.as_ptr())
@@ -330,14 +333,14 @@ impl Socket {
         };
 
         if length < 0 {
-            if debug {
-                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-            }
-
-            return Err(CursedErrorHandle::new(
-                CursedError::Sockets,
-                String::from("Can\'t receive packet"),
-            ));
+            let err: io::Error = io::Error::last_os_error();
+    
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t read raw packet due to {} error", err.to_string()),
+                )
+            );
         }
 
         if debug {
@@ -387,7 +390,7 @@ impl Socket {
                 unsafe { str_from_cstr(ccs::pcap_geterr(self.adapter as *mut ccs::pcap)) };
 
             return Err(CursedErrorHandle::new(
-                CursedError::Sockets,
+                CursedError::Connection(CursedErrorType::Refused),
                 format!("Can\'t send buffer due to \"{}\"", error),
             ));
         }
@@ -428,13 +431,14 @@ impl Socket {
         };
 
         if length < 0 {
-            if debug {
-                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-            }
-            return Err(CursedErrorHandle::new(
-                CursedError::Sockets,
-                String::from("Can\'t send buffer"),
-            ));
+            let err: io::Error = io::Error::last_os_error();
+    
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t send raw packet due to {} error", err.to_string()),
+                )
+            );
         }
 
         if debug {

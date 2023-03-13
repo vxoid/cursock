@@ -1,6 +1,4 @@
 use crate::*;
-#[cfg(any(target_os = "linux"))]
-use std::ffi::CString;
 
 pub struct Tun {
     #[cfg(target_os = "linux")]
@@ -33,7 +31,7 @@ impl Tun {
             let _ = debug;
             
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -56,7 +54,7 @@ impl Tun {
             let _ = debug;
             
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -85,7 +83,7 @@ impl Tun {
             let _ = debug;
             
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -107,7 +105,7 @@ impl Tun {
             let _ = debug;
             
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -125,8 +123,8 @@ impl Tun {
     }
 
     #[cfg(target_os = "linux")]
-    fn open_linux(interface: &str, debug: bool) -> Result<Self, CursedErrorHandle> {
-        let _ = get_interface_info(interface, debug)?;
+    fn open_linux(interface: &str, _: bool) -> Result<Self, CursedErrorHandle> {
+        let _ = get_interface_info(interface)?;
         
         const TUN_PATH: &'static str = "/dev/net/tun";
 
@@ -134,7 +132,7 @@ impl Tun {
             Ok(path) => path,
             Err(err) => {
                 return Err(CursedErrorHandle::new(
-                    CursedError::Parse,
+                    CursedError::Data(CursedErrorType::Parse),
                     format!(
                         "{} is not valid c string can\'t convert it due to {}",
                         TUN_PATH,
@@ -149,18 +147,21 @@ impl Tun {
         };
 
         if fd < 0 {
-            if debug {
-                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-            }
-
-            return Err(CursedErrorHandle::new(CursedError::Sockets, format!("Can\'t open {} file", TUN_PATH)))
+            let err: io::Error = io::Error::last_os_error();
+    
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t open tun adapter due to {} error", err.to_string()),
+                )
+            );
         }
 
         let cinterface: CString = match CString::new(interface) {
             Ok(interface) => interface,
             Err(err) => {
                 return Err(CursedErrorHandle::new(
-                    CursedError::Parse,
+                    CursedError::Data(CursedErrorType::Parse),
                     format!(
                         "{} is not valid c string can\'t convert it due to {}",
                         interface,
@@ -178,19 +179,22 @@ impl Tun {
 
         ifr.ifr_ifru.ifru_flags = ccs::IFF_TUN as i16;
 
-        let err: i32 = unsafe {
+        let result: i32 = unsafe {
             ccs::ioctl(fd, ccs::TUNSETIFF as u64, &mut ifr as *mut ccs::ifreq as *mut std::os::raw::c_void)
         };
 
-        if err < 0 {
-            if debug {
-                unsafe { ccs::perror(EMPTY_ARRAY.as_ptr()) }
-            }
-
-            return Err(CursedErrorHandle::new(CursedError::Sockets, "Can\'t open tun".to_string()))
+        if result < 0 {
+            let err: io::Error = io::Error::last_os_error();
+    
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::from(err.kind()),
+                    format!("can\'t open tun adapter due to {} error", err.to_string()),
+                )
+            );
         }
 
-        Ok(Self { fd, interface: interface.to_string() })
+        Ok(Self { fd: result, interface: interface.to_string() })
     }
 
     #[cfg(target_os = "windows")]
@@ -206,26 +210,38 @@ impl Tun {
             ccs::WintunOpenAdapter(name.as_ptr())
         };
         if adapter as usize == 0 {
-            if debug {
-                log()
-            }
+            let err: String = log(None).unwrap_or("".to_string());
 
-            return Err(CursedErrorHandle::new(CursedError::Sockets, String::from("Can\'t open adapter")));
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::Connection(CursedErrorType::Refused),
+                    format!("Can\'t open adapter \"{}\"", err)
+                )
+            );
         }
 
         let session: ccs::WintunSessionHandle = unsafe {
             ccs::WintunStartSession(adapter, 0x400000)
         };
         if session as usize == 0 {
-            if debug {
-                log()
-            }
+            let err: String = log(None).unwrap_or("".to_string());
 
-            return Err(CursedErrorHandle::new(CursedError::Sockets, String::from("Can\'t start session")));
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::Connection(CursedErrorType::Refused),
+                    format!("Can\'t start session \"{}\"", err)
+                )
+            );
         }
 
-        let index: u32 = unsafe {
-            ccs::WintunGetAdapterIndex(adapter)
+        let mut luid: u64 = 0;
+        unsafe {
+            ccs::WintunGetAdapterLUID(adapter, &mut luid)
+        };
+
+        let mut index: u32 = 0;
+        unsafe {
+            ccs::ConvertInterfaceLuidToIndex(&luid, &mut index)
         };
 
         Ok(Self { adapter, session, index })
@@ -240,10 +256,10 @@ impl Tun {
         let set_up_query: String = format!("ip link set dev \"{}\" up", interface);
 
         const QUERIES_SIZE: usize = 3;
-        let queries: [&[&str]; QUERIES_SIZE] = [
-            &["-c", &interface_create_query],
-            &["-c", &addr_add_query],
-            &["-c", &set_up_query]
+        let queries: [(&str, &str); QUERIES_SIZE] = [
+            ("-c", &interface_create_query),
+            ("-c", &addr_add_query),
+            ("-c", &set_up_query)
         ];
 
         run_queries(&queries, "sh")?;
@@ -273,22 +289,28 @@ impl Tun {
             ccs::WintunCreateAdapter(name.as_ptr(), type_.as_ptr(), &guid)
         };
         if adapter as usize == 0 {
-            if debug {
-                log()
-            }
+            let err: String = log(None).unwrap_or("".to_string());
 
-            return Err(CursedErrorHandle::new(CursedError::Sockets, String::from("Can\'t create adapter")));
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::Connection(CursedErrorType::Refused),
+                    format!("Can\'t create adapter due to \"{}\"", err)
+                )
+            );
         }
 
         let session: ccs::WintunSessionHandle = unsafe {
             ccs::WintunStartSession(adapter, 0x4000000)
         };
         if session as usize == 0 {
-            if debug {
-                log()
-            }
+            let err: String = log(None).unwrap_or("".to_string());
 
-            return Err(CursedErrorHandle::new(CursedError::Sockets, String::from("Can\'t start session")));
+            return Err(
+                CursedErrorHandle::new(
+                    CursedError::Connection(CursedErrorType::Refused),
+                    format!("Can\'t start session due to \"{}\"", err)
+                )
+            );
         }
         let guid: String = format!("{}", guid);
         let (_, _, _, index) = get_interface_by_guid(&guid)?;
@@ -297,8 +319,8 @@ impl Tun {
         let addr_add_query: String = format!("netsh interface ip set address \"{}\" static \"{}\" 0.0.0.0", interface, ip_addr);
 
         const QUERIES_SIZE: usize = 1;
-        let queries: [&[&str]; QUERIES_SIZE] = [
-            &["/C", &addr_add_query]
+        let queries: [(&str, &str); QUERIES_SIZE] = [
+            ("/C", &addr_add_query)
         ];
 
         run_queries(&queries, "cmd")?;
@@ -311,7 +333,7 @@ impl Tun {
         let result: isize = unsafe {
             ccs::read(self.fd, buffer.as_mut_ptr() as *mut std::os::raw::c_void, buffer.len())
         };
-        buffer.rotate_left(4);
+        buffer.rotate_left(TUN_HEADER_SIZE);
 
         if debug {
             println!("{} bytes has been read", result);
@@ -329,7 +351,10 @@ impl Tun {
         };
         if packet as usize == 0 {
             return Err(
-                CursedErrorHandle::new(CursedError::NotEnought, String::from("no packets has been read"))
+                CursedErrorHandle::new(
+                    CursedError::Buffer(CursedErrorType::Overflow),
+                    String::from("no packets has been read")
+                )
             );            
         }
 
@@ -345,8 +370,27 @@ impl Tun {
 
     #[cfg(target_os = "linux")]
     fn write_linux(&self, buffer: &[u8], debug: bool) -> Result<(), CursedErrorHandle> {
+        let buffer_len: usize = buffer.len();
+        let mut packet: Vec<u8> = vec![0; TUN_HEADER_SIZE+buffer_len];
+        let tun_header: &mut TunHeader = unsafe {
+            &mut *(packet.as_mut_ptr() as *mut TunHeader)
+        };
+
+        let ip_header: &Ipv4Header = unsafe {
+            &*(buffer.as_ptr() as *const Ipv4Header)
+        };
+        match ip_header.verihl >> 4 {
+            4 => tun_header.protocol = (IPV4_PROTO as u16).to_be() as u32,
+            6 => tun_header.protocol = (IPV6_PROTO as u16).to_be() as u32,
+            _ => tun_header.protocol = (ARP_PROTO as u16).to_be() as u32
+        }
+
+        for i in 0..buffer_len {
+            packet[i+TUN_HEADER_SIZE] = buffer[i]
+        }
+        
         let result: isize = unsafe {
-            ccs::write(self.fd, buffer.as_ptr() as *const std::os::raw::c_void, buffer.len())
+            ccs::write(self.fd, packet.as_ptr() as *const std::os::raw::c_void, packet.len())
         };
 
         if debug {
@@ -363,7 +407,10 @@ impl Tun {
         };
         if packet as usize == 0 {
             return Err(
-                CursedErrorHandle::new(CursedError::NotEnought, String::from("can\'t allocate packet"))
+                CursedErrorHandle::new(
+                    CursedError::Memory(CursedErrorType::NotEnough),
+                    String::from("can\'t allocate packet")
+                )
             );
         }
 
@@ -377,8 +424,6 @@ impl Tun {
     }
 
     fn separated_network(&self) -> Result<(), CursedErrorHandle> {
-        // No need to setup
-        
         Ok(())
     }
 
@@ -398,7 +443,7 @@ impl Tun {
             let _ = routes;
             
             Err(CursedErrorHandle::new(
-                CursedError::OS,
+                CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
             ))
         }
@@ -415,27 +460,21 @@ impl Tun {
         let accept_forwarding_query: String = format!("iptables -I FORWARD 1 -o \"{}\" -j ACCEPT", self.interface);
 
         const QUERIES_SIZE: usize = 6;
-        let queries: [&[&str]; QUERIES_SIZE] = [
-            &["-c", &route_add_128_query],
-            &["-c", &route_add_0_query],
-            &["-c", &sysctl_query],
-            &["-c", &postrouting_query],
-            &["-c", &forwarding_query],
-            &["-c", &accept_forwarding_query]
+        let queries: [(&str, &str); QUERIES_SIZE] = [
+            ("-c", &route_add_128_query),
+            ("-c", &route_add_0_query),
+            ("-c", &sysctl_query),
+            ("-c", &postrouting_query),
+            ("-c", &forwarding_query),
+            ("-c", &accept_forwarding_query)
         ];
 
         run_queries(&queries, "sh")?;
 
         for route in routes {
             let route_query: String = format!("-c ip route add \"{}\"/32 dev \"{}\"", route.0, route.1);
-            if let Err(err) = std::process::Command::new("sh").arg(route_query).output() {
-                return Err(
-                    CursedErrorHandle::new(
-                        CursedError::Sockets,
-                        format!("can\'t create tun device due to \"{}\"", err.to_string())
-                    )
-                );
-            }
+
+            run_queries(&[("-c", &route_query)], "sh")?
         }
 
         Ok(())
@@ -446,8 +485,8 @@ impl Tun {
         let route_query: String = format!("route add 0.0.0.0 MASK 0.0.0.0 0.0.0.0 IF {} METRIC 3", self.index); 
 
         const QUERIES_SIZE: usize = 1;
-        let queries: [&[&str]; QUERIES_SIZE] = [
-            &["/C", &route_query]
+        let queries: [(&str, &str); QUERIES_SIZE] = [
+            ("/C", &route_query)
         ];
 
         run_queries(&queries, "cmd")?;
@@ -457,21 +496,14 @@ impl Tun {
                 Ok(index) => index,
                 Err(err) => return Err(
                     CursedErrorHandle::new(
-                        CursedError::Parse,
+                        CursedError::Data(CursedErrorType::Parse),
                         format!("can\'t parse {} as interface index due to \"{}\"", self.index, err.to_string()),
                     )
                 ),
             };
 
             let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", route.0, index);
-            if let Err(err) = std::process::Command::new("cmd").arg(route_add_query).output() {
-                return Err(
-                    CursedErrorHandle::new(
-                        CursedError::Sockets,
-                        format!("can\'t create tun device due to \"{}\"", err.to_string())
-                    )
-                );
-            }
+            run_queries(&[("/C", &route_add_query)], "cmd")?
         }
 
         Ok(())
@@ -484,11 +516,7 @@ impl Tun {
     }
 
     #[cfg(target_os = "linux")]
-    fn destroy_linux(&self) {
-        let set_tun_down: String = format!("ip link set dev \"{}\" down", self.interface);
-
-        let _ = run_queries(&[&["-c", &set_tun_down]], "sh");
-    }
+    fn destroy_linux(&self) {}
 }
 
 impl Drop for Tun {
@@ -499,33 +527,6 @@ impl Drop for Tun {
 
 unsafe impl Send for Tun {}
 unsafe impl Sync for Tun {}
-
-#[cfg(target_os = "windows")]
-fn log() {
-    let error: u32 = unsafe {
-        ccs::GetLastError()
-    };
-
-    let system: *mut u16 = ccs::null_mut();
-
-    unsafe {
-        ccs::FormatMessageW(
-            ccs::FORMAT_MESSAGE_FROM_SYSTEM | ccs::FORMAT_MESSAGE_ALLOCATE_BUFFER |
-            ccs::FORMAT_MESSAGE_MAX_WIDTH_MASK,
-            ccs::null(),
-            error,
-            (((0x01 as u16) << 10) | (0x00 as u16)) as u32,
-            system,
-            0,
-            ccs::null_mut()
-        );
-    };
-    if system as usize == 0 {
-        return;
-    }
-
-    unsafe { logger(ccs::WINTUN_LOG_ERR, 0, system) }
-}
 
 #[cfg(target_os = "windows")]
 unsafe extern "C" fn logger(level: i32, _: u64, line: *const u16) {

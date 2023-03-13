@@ -10,6 +10,6 @@ keywords = ["cursock", "networking", "socket", "raw", "arp", "icmp", "tunnel", "
 description = "Crate for raw socketing, can send raw packets and some protocols from linux os and windows using npcap for 2nd"
 
 [dependencies]
-curerr = "1.0.1"
+curerr = "1.1.0"
 curuam = "0.2.3"
 curmacro = "1.0.0"

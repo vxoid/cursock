@@ -32,10 +32,33 @@ pub struct sockaddr_in {
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Clone for sockaddr_in {
+    fn clone(&self) -> Self {
+        Self {
+            sin_family: self.sin_family.clone(),
+            sin_port: self.sin_port.clone(),
+            sin_addr: self.sin_addr.clone(),
+            sin_zero: self.sin_zero.clone()
+        }
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Copy for sockaddr_in {}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 #[repr(C)]
 pub struct in_addr {
     pub s_addr: [u8; 4],
 }
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Clone for in_addr {
+    fn clone(&self) -> Self {
+        Self { s_addr: self.s_addr.clone() }
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Copy for in_addr {}
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[repr(C)]
@@ -48,10 +71,34 @@ pub struct sockaddr_in6 {
 }
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Clone for sockaddr_in6 {
+    fn clone(&self) -> Self {
+        Self {
+            sin6_family: self.sin6_family.clone(),
+            sin6_port: self.sin6_port.clone(),
+            sin6_flowinfo: self.sin6_flowinfo.clone(),
+            sin6_addr: self.sin6_addr.clone(),
+            sin6_scope_id: self.sin6_scope_id.clone()
+        }
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Copy for sockaddr_in6 {}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 #[repr(C)]
 pub struct in6_addr {
     pub s6_addr: [u8; 16]
 }
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Clone for in6_addr {
+    fn clone(&self) -> Self {
+        Self { s6_addr: self.s6_addr.clone() }
+    }
+}
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+impl Copy for in6_addr {}
 
 #[cfg(target_os = "linux")]
 #[repr(C)]
@@ -344,7 +391,7 @@ impl Clone for _GUID {
 #[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct MIB_UNICASTIPADDRESS_ROW {
-    pub address: sockaddr_in,
+    pub address: SOCKADDR_INET,
     pub luid: u64,
     pub index: u32,
     pub prefix_origin: i32,
@@ -476,4 +523,22 @@ pub struct IP_ADAPTER_GATEWAY_ADDRESS_LH {
 pub struct IP_ADAPTER_DNS_SUFFIX {
     pub next: *mut IP_ADAPTER_DNS_SUFFIX,
     pub string: [u16; 256]
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub struct MIB_IPNETROW {
+    pub index: u32,
+    pub physaddrlen: u32,
+    pub physaddr: [u8; 8],
+    pub addr: [u8; 4],
+    pub dwtype: u32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+pub union SOCKADDR_INET {
+    pub ipv4: sockaddr_in,
+    pub ipv6: sockaddr_in6,
+    pub family: i32,
 }

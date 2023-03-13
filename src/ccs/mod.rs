@@ -49,7 +49,10 @@ extern "system" {
         size: *mut u32
     ) -> u32;
     pub fn CreateUnicastIpAddressEntry(row: *const MIB_UNICASTIPADDRESS_ROW) -> u32;
+    pub fn ConvertInterfaceLuidToIndex(luid: *const u64, index: *mut u32) -> u32;
     pub fn InitializeUnicastIpAddressEntry(row: *mut MIB_UNICASTIPADDRESS_ROW);
+    pub fn CreateIpNetEntry(entry: *mut MIB_IPNETROW) -> u32;
+    pub fn DeleteIpNetEntry(entry: *mut MIB_IPNETROW) -> u32;
 }
 
 #[link(name = "wpcap", kind = "static")]
@@ -94,7 +97,6 @@ extern "C" {
     pub fn WintunReleaseReceivePacket(session: WintunSessionHandle, buffer: *const u8);
     pub fn WintunGetAdapterLUID(adapter: WintunAdapterHandle, luid: *mut u64);
     pub fn WintunSendPacket(session: WintunSessionHandle, packet: *mut u8);
-    pub fn WintunGetAdapterIndex(adapter: WintunAdapterHandle) -> u32;
     pub fn WintunOpenAdapter(name: *const u16) -> WintunAdapterHandle;
     pub fn WintunCloseAdapter(adapter: WintunAdapterHandle);
     pub fn WintunEndSession(session: WintunSessionHandle);

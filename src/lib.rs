@@ -7,10 +7,17 @@ extern crate curerr;
 pub mod ccs;
 pub mod utils;
 
-use std::net::{
-    IpAddr,
-    Ipv4Addr,
-    Ipv6Addr,
+use std::{
+    time::Duration,
+    net::{
+        IpAddr,
+        Ipv4Addr
+    }
+};
+#[cfg(target_os = "linux")]
+use std::{
+    io,
+    ffi::CString
 };
 
 mod arp;
