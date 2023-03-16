@@ -147,7 +147,7 @@ pub enum IpVersions {
 }
 
 pub enum SetupTypes<'all_lt, 'addr_lt, 'str_lt> {
-    RouteAll(&'all_lt [(&'addr_lt Ipv4Addr, &'str_lt str)]),
+    RouteAll(&'all_lt [(&'addr_lt IpAddr, &'str_lt str)]),
     Separated
 }
 
@@ -726,6 +726,22 @@ impl Handle<u8> for Bit {
     }
 }
 
+impl PartialEq<Bit> for Bit {
+    fn eq(&self, other: &Bit) -> bool {
+        match other {
+            Bit::One => match self {
+                Bit::One => true,
+                Bit::Zero => false,
+            },
+            Bit::Zero => match self {
+                Bit::One => false,
+                Bit::Zero => true,
+            },
+        }
+    }
+}
+impl Eq for Bit {}
+
 impl BinOpers for u32 {
     fn get_bit(&self, index: usize) -> Bit {
         Handle::from((self.clone() >> index & 1) as u8)
@@ -745,6 +761,42 @@ impl BinOpers for u32 {
 }
 
 impl BinOpers for u8 {
+    fn get_bit(&self, index: usize) -> Bit {
+        Handle::from((self.clone() >> index & 1) as u8)
+    }
+    fn set_bit(&self, value: Bit, index: usize) -> Self {
+        match value {
+            Bit::One => {
+                let mask: Self = 1;
+                self.clone() | (mask << index)
+            }
+            Bit::Zero => {
+                let mask: Self = 1;
+                self.clone() & !(mask << index)
+            }
+        }
+    }
+}
+
+impl BinOpers for u16 {
+    fn get_bit(&self, index: usize) -> Bit {
+        Handle::from((self.clone() >> index & 1) as u8)
+    }
+    fn set_bit(&self, value: Bit, index: usize) -> Self {
+        match value {
+            Bit::One => {
+                let mask: Self = 1;
+                self.clone() | (mask << index)
+            }
+            Bit::Zero => {
+                let mask: Self = 1;
+                self.clone() & !(mask << index)
+            }
+        }
+    }
+}
+
+impl BinOpers for u128 {
     fn get_bit(&self, index: usize) -> Bit {
         Handle::from((self.clone() >> index & 1) as u8)
     }
@@ -786,6 +838,46 @@ impl ArpResponse {
     );
 }
 
+pub fn prefix_from_netmask(netmask: &Ipv4Addr) -> u8 {
+    let mut prefix_len: u8 = 0;
+    
+    'netmask: for octet in netmask.octets() {
+        let mut bit: usize = u8::BITS as usize;
+
+        loop {
+            bit -= 1;
+
+            if octet.get_bit(bit) != Bit::One {
+                break 'netmask;
+            }
+            prefix_len += 1;
+
+            if bit == 0 {
+                break;
+            }
+        }
+    }
+
+    prefix_len
+}
+
+pub fn netmask_from_prefix(prefix: u8) -> Ipv4Addr {
+    let prefix: u8 = if prefix > 32 {
+        32
+    } else {
+        prefix
+    };
+
+    let mut raw_netmask: u32 = 0xffffffff;
+    raw_netmask = (raw_netmask << 32-prefix) >> 32-prefix;
+
+    let octets: [u8; IPV4_LEN] = unsafe {
+        std::mem::transmute(raw_netmask)
+    };
+
+    Ipv4Addr::from(octets)
+}
+
 pub fn run_queries(queries: &[(&str, &str)], program: &str) -> Result<(), CursedErrorHandle> {
     for query in queries {
         let output: Output = match Command::new(program).args([query.0, query.1]).output() {
@@ -812,8 +904,41 @@ pub fn run_queries(queries: &[(&str, &str)], program: &str) -> Result<(), Cursed
     Ok(())
 }
 
+pub fn get_interface_addresses(interface: &str) -> Result<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>), CursedErrorHandle> {
+    #[cfg(target_os = "linux")]
+    {
+        let (ipv4, ipv6, _, _) = get_interface_by_name(interface)?;
+        Ok((ipv4, ipv6))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let index: u32 = match interface.parse() {
+            Ok(index) => index,
+            Err(err) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Data(CursedErrorType::Parse),
+                    format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
+                )
+            ),
+        };
+
+        let (ipv4, ipv6, _, _) = get_interface_by_index(index)?;
+        Ok((ipv4, ipv6))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = interface;
+
+        Err(CursedErrorHandle::new(
+            CursedError::Other(CursedErrorType::NotSupported),
+            format!("{} is not supported yet!", std::env::consts::OS),
+        ))
+    }
+}
+
 #[cfg(target_os = "windows")]
-pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, String), CursedErrorHandle> {
+pub fn get_interface_by_index(index: u32) -> Result<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>, Mac, String), CursedErrorHandle> {
     let mut size: u32 = 0;
     let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = ccs::null_mut();
     unsafe {
@@ -845,7 +970,7 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
             Err(_) => return Err(
                 CursedErrorHandle::new(
                     CursedError::Unknown,
-                    format!("can\'t get adapter addresses due to {} win api error", result)
+                    format!("can\'t get adapter addresses due to \"{}\" win api error", result)
                 )
             ),
         };
@@ -854,12 +979,12 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
         return Err(
             CursedErrorHandle::new(
                 err.into(),
-                format!("can\'t get adapter addresses due to {} ({}) win api error", message, result)
+                format!("can\'t get adapter addresses due to \"{}\" ({}) win api error", message, result)
             )
         );
     }
 
-    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, String)> = None;
+    let mut data: Option<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>, Mac, String)> = None;
     let mut p_current: *mut ccs::IP_ADAPTER_ADDRESSES = addresses;
     while !p_current.is_null() {
         let adapter: &mut ccs::IP_ADAPTER_ADDRESSES = unsafe {
@@ -871,8 +996,8 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
             memcpy(mac.as_mut_ptr(), adapter.physical_address.as_ptr(), MAC_LEN);
             let mac: Mac = Handle::from(mac);
             
-            let mut ipv4: Option<Ipv4Addr> = None;
-            let mut ipv6: Option<Ipv6Addr> = None;
+            let mut ipv4: Option<(Ipv4Addr, u8)> = None;
+            let mut ipv6: Option<(Ipv6Addr, u8)> = None;
 
             let mut unicast_address: *mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = adapter.first_unicast;
             while !unicast_address.is_null() {
@@ -886,19 +1011,19 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
                         (*p_sockaddr).sa_family
                     };
                     match family as i32 {
-                        ccs::AF_INET => {
+                        ccs::AF_INET => if let None = ipv4 {
                             let address: &mut ccs::sockaddr_in = unsafe {
                                 &mut *(p_sockaddr as *mut ccs::sockaddr_in)
                             };
                             
-                            ipv4 = Some(Ipv4Addr::from(address.sin_addr.s_addr))
+                            ipv4 = Some((Ipv4Addr::from(address.sin_addr.s_addr), r_unicast_address.onlink_prefix_length))
                         },
-                        ccs::AF_INET6 => {
+                        ccs::AF_INET6 => if let None = ipv6 {
                             let address: &mut ccs::sockaddr_in6 = unsafe {
                                 &mut *(p_sockaddr as *mut ccs::sockaddr_in6)
                             };
 
-                            ipv6 = Some(Ipv6Addr::from(address.sin6_addr.s6_addr));
+                            ipv6 = Some((Ipv6Addr::from(address.sin6_addr.s6_addr), r_unicast_address.onlink_prefix_length));
                         },
                         _ => {}
                     }
@@ -926,7 +1051,7 @@ pub fn get_interface_by_index(index: u32) -> Result<(Option<Ipv4Addr>, Option<Ip
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, u32), CursedErrorHandle> {
+pub fn get_interface_by_guid(guid: &str) -> Result<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>, Mac, u32), CursedErrorHandle> {
     let mut size: u32 = 0;
     let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = ccs::null_mut();
     unsafe {
@@ -942,7 +1067,7 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
     let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
     let addresses: *mut ccs::IP_ADAPTER_ADDRESSES = buffer.as_mut_ptr() as *mut ccs::IP_ADAPTER_ADDRESSES;
 
-    let err: u32 = unsafe {
+    let result: u32 = unsafe {
         ccs::GetAdaptersAddresses(
             ccs::AF_UNSPEC as u32,
             0,
@@ -952,13 +1077,13 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
         )
     };
 
-    if err != ccs::ERROR_SUCCESS {
-        let err: WinAPIError = match WinAPIError::try_from(err) {
+    if result != ccs::ERROR_SUCCESS {
+        let err: WinAPIError = match WinAPIError::try_from(result) {
             Ok(err) => err,
             Err(_) => return Err(
                 CursedErrorHandle::new(
                     CursedError::Unknown,
-                    format!("can\'t get adapter addresses due to {} win api error", err)
+                    format!("can\'t get adapter addresses due to \"{}\" win api error", result)
                 )
             ),
         };
@@ -967,12 +1092,12 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
         return Err(
             CursedErrorHandle::new(
                 err.into(),
-                format!("can\'t get adapter addresses due to {} win api error", message)
+                format!("can\'t get adapter addresses due to \"{}\" ({}) win api error", message, result)
             )
         );
     }
 
-    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, u32)> = None;
+    let mut data: Option<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>, Mac, u32)> = None;
     let mut p_current: *mut ccs::IP_ADAPTER_ADDRESSES = addresses;
     while !p_current.is_null() {
         let adapter: &mut ccs::IP_ADAPTER_ADDRESSES = unsafe {
@@ -984,8 +1109,8 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
             memcpy(mac.as_mut_ptr(), adapter.physical_address.as_ptr(), MAC_LEN);
             let mac: Mac = Handle::from(mac);
             
-            let mut ipv4: Option<Ipv4Addr> = None;
-            let mut ipv6: Option<Ipv6Addr> = None;
+            let mut ipv4: Option<(Ipv4Addr, u8)> = None;
+            let mut ipv6: Option<(Ipv6Addr, u8)> = None;
 
             let mut unicast_address: *mut ccs::IP_ADAPTER_UNICAST_ADDRESS_LH = adapter.first_unicast;
             while !unicast_address.is_null() {
@@ -999,19 +1124,19 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
                         (*p_sockaddr).sa_family
                     };
                     match family as i32 {
-                        ccs::AF_INET => {
+                        ccs::AF_INET => if let None = ipv4 {
                             let address: &mut ccs::sockaddr_in = unsafe {
                                 &mut *(p_sockaddr as *mut ccs::sockaddr_in)
                             };
                             
-                            ipv4 = Some(Ipv4Addr::from(address.sin_addr.s_addr))
+                            ipv4 = Some((Ipv4Addr::from(address.sin_addr.s_addr), r_unicast_address.onlink_prefix_length))
                         },
-                        ccs::AF_INET6 => {
+                        ccs::AF_INET6 => if let None = ipv6 {
                             let address: &mut ccs::sockaddr_in6 = unsafe {
                                 &mut *(p_sockaddr as *mut ccs::sockaddr_in6)
                             };
 
-                            ipv6 = Some(Ipv6Addr::from(address.sin6_addr.s6_addr));
+                            ipv6 = Some((Ipv6Addr::from(address.sin6_addr.s6_addr), r_unicast_address.onlink_prefix_length));
                         },
                         _ => {}
                     }
@@ -1039,7 +1164,7 @@ pub fn get_interface_by_guid(guid: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv
 }
 
 #[cfg(target_os = "linux")]
-pub fn get_interface_info(interface: &str) -> Result<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32), CursedErrorHandle> {
+pub fn get_interface_by_name(interface: &str) -> Result<(Option<(Ipv4Addr, u8)>, Option<(Ipv6Addr, u8)>, Mac, i32), CursedErrorHandle> {
     let mut addrs: *mut ccs::ifaddrs = ccs::null_mut();
 
     let result: i32 = unsafe {
@@ -1052,74 +1177,57 @@ pub fn get_interface_info(interface: &str) -> Result<(Option<Ipv4Addr>, Option<I
         return Err(
             CursedErrorHandle::new(
                 CursedError::from(err.kind()),
-                format!("can\'t get interfaces due to {} error", err.to_string()),
+                format!("can\'t get interfaces due to \"{}\"", err.to_string()),
             )
         );
     }
 
     let mut current: *mut ccs::ifaddrs = addrs;
-    let mut data: Option<(Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32)> = None;
-    
+    let mut ipv4: Option<(Ipv4Addr, u8)> = None;
+    let mut ipv6: Option<(Ipv6Addr, u8)> = None;
+
+    let (mac, index): (Mac, i32) = get_ifr_info(interface)?;
+
     while !current.is_null() {
         let r_current: &mut ccs::ifaddrs = unsafe {
             &mut *current
         };
 
-        println!("{}", str_from_cstr(r_current.ifa_name));
         if str_from_cstr(r_current.ifa_name) == interface {            
-            let mut ipv4: Option<Ipv4Addr> = None;
-            let mut ipv6: Option<Ipv6Addr> = None;
+            let r_current: &mut ccs::ifaddrs = unsafe {
+                &mut *current
+            };
+            let family: i32 = unsafe {
+                (*r_current.ifa_addr).sa_family as i32
+            };
 
-            let (mac, index): (Mac, i32) = get_ifr_info(interface)?;
-            while !current.is_null() {
-                let r_current: &mut ccs::ifaddrs = unsafe {
-                    &mut *current
-                };
-                let family: i32 = unsafe {
-                    (*r_current.ifa_addr).sa_family as i32
-                };
+            match family {
+                ccs::AF_INET => if let None = ipv4 {
+                    let addr: &mut ccs::sockaddr_in = unsafe {
+                        &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in)
+                    };
+                    let netmask: &mut ccs::sockaddr_in = unsafe {
+                        &mut *(r_current.ifa_netmask as *mut ccs::sockaddr_in)
+                    };
 
-                match family {
-                    ccs::AF_INET => {
-                        let addr: &mut ccs::sockaddr_in = unsafe {
-                            &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in)
-                        };
+                    ipv4 = Some((Ipv4Addr::from(addr.sin_addr.s_addr), prefix_from_netmask(&Ipv4Addr::from(netmask.sin_addr.s_addr))))
+                },
+                ccs::AF_INET6 => if let None = ipv6 {
+                    let addr: &mut ccs::sockaddr_in6 = unsafe {
+                        &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in6)
+                    };
                         
-                        println!("{}", Ipv4Addr::from(addr.sin_addr.s_addr));
-                        ipv4 = Some(Ipv4Addr::from(addr.sin_addr.s_addr))
-                    },
-                    ccs::AF_INET6 => {
-                        let addr: &mut ccs::sockaddr_in6 = unsafe {
-                            &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in6)
-                        };
-                        
-                        println!("{}", Ipv6Addr::from(addr.sin6_addr.s6_addr));
-                        ipv6 = Some(Ipv6Addr::from(addr.sin6_addr.s6_addr))
-                    },
-                    _ => {}
-                }
-
-                current = r_current.ifa_next
+                    ipv6 = Some((Ipv6Addr::from(addr.sin6_addr.s6_addr), addr.sin6_prefixlen as u8))
+                },
+                _ => {}
             }
-
-            data = Some((ipv4, ipv6, mac, index))
         }
 
         current = r_current.ifa_next
     }
     unsafe { ccs::freeifaddrs(addrs) }
 
-    let data: (Option<Ipv4Addr>, Option<Ipv6Addr>, Mac, i32) = match data {
-        Some(data) => data,
-        None => return Err(
-            CursedErrorHandle::new(
-                CursedError::Input(CursedErrorType::Invalid),
-                format!("{} isn\'t valid interface name", interface)
-            )
-        ),
-    };
-
-    Ok(data)
+    Ok((ipv4, ipv6, mac, index))
 }
 
 #[cfg(target_os = "linux")]
@@ -1138,7 +1246,7 @@ pub fn get_ifr_info(interface: &str) -> Result<(Mac, i32), CursedErrorHandle> {
         return Err(
             CursedErrorHandle::new(
                 CursedError::from(err.kind()),
-                format!("can\'t init socket due to {} error", err.to_string()),
+                format!("can\'t init socket due to \"{}\"", err.to_string()),
             )
         );
     }
@@ -1149,7 +1257,7 @@ pub fn get_ifr_info(interface: &str) -> Result<(Mac, i32), CursedErrorHandle> {
             return Err(CursedErrorHandle::new(
                 CursedError::Data(CursedErrorType::Parse),
                 format!(
-                    "{} is not valid c string can\'t convert it due to {}",
+                    "{} is not valid c string can\'t convert it due to \"{}\"",
                     interface,
                     err.to_string()
                 ),
@@ -1163,10 +1271,17 @@ pub fn get_ifr_info(interface: &str) -> Result<(Mac, i32), CursedErrorHandle> {
         ifr_ifru: ifru,
     };
 
+    let interface_length: usize = interface.as_bytes_with_nul().len();
+    let ifr_length: usize = if_request.ifr_name.len();
+    let length: usize = if interface_length > ifr_length {
+        ifr_length
+    } else {
+        interface_length
+    };
     memcpy(
         if_request.ifr_name.as_mut_ptr(),
         interface.as_ptr(),
-        interface.as_bytes_with_nul().len(),
+        length,
     );
 
     let mac: Mac = get_ifr_mac(socket, &mut if_request)?;
@@ -1187,7 +1302,7 @@ fn get_ifr_index(socket: i32, ifr: *mut ccs::ifreq) -> Result<i32, CursedErrorHa
         return Err(
             CursedErrorHandle::new(
                 CursedError::from(err.kind()),
-                format!("can\'t get if index due to {} error", err.to_string()),
+                format!("can\'t get if index due to \"{}\"", err.to_string()),
             )
         );
     }
@@ -1196,59 +1311,6 @@ fn get_ifr_index(socket: i32, ifr: *mut ccs::ifreq) -> Result<i32, CursedErrorHa
 
     Ok(index)
 }
-
-// #[cfg(target_os = "linux")]
-// fn get_interface_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> Result<Ipv4Addr, CursedErrorHandle> {
-//     let result: i32;
-
-//     result = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
-
-//     if result < 0 {
-//         let err: io::Error = io::Error::last_os_error();
-    
-//         return Err(
-//             CursedErrorHandle::new(
-//                 CursedError::from(err.kind()),
-//                 format!("can\'t get if ipv4 due to {} error", err.to_string()),
-//             )
-//         );
-//     }
-
-//     let addr: *const ccs::sockaddr_in =
-//         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
-//     let mut ip: [u8; IPV4_LEN] = [0; IPV4_LEN];
-
-//     memcpy(
-//         ip.as_mut_ptr(),
-//         unsafe { &(*addr).sin_addr.s_addr },
-//         std::mem::size_of::<[u8; IPV4_LEN]>(),
-//     );
-
-//     Ok(Ipv4Addr::from(ip))
-// }
-
-// #[cfg(target_os = "linux")]
-// fn get_interface_ipv6(socket: i32, ifr: *mut ccs::ifreq) -> Result<Ipv6Addr, CursedErrorHandle> {
-//     let result: i32;
-
-//     result = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
-
-//     if result < 0 {
-//         let err: io::Error = io::Error::last_os_error();
-    
-//         return Err(
-//             CursedErrorHandle::new(
-//                 CursedError::from(err.kind()),
-//                 format!("can\'t open tun adapter due to {} error", err.to_string()),
-//             )
-//         );
-//     }
-
-//     let addr: *const ccs::sockaddr_in6 =
-//         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in6;
-
-//     Ok(Ipv6Addr::from(unsafe { (*addr).sin6_addr.s6_addr }))
-// }
 
 #[cfg(target_os = "linux")]
 fn get_ifr_mac(socket: i32, ifr: *mut ccs::ifreq) -> Result<Mac, CursedErrorHandle> {
@@ -1260,7 +1322,7 @@ fn get_ifr_mac(socket: i32, ifr: *mut ccs::ifreq) -> Result<Mac, CursedErrorHand
         return Err(
             CursedErrorHandle::new(
                 CursedError::from(err.kind()),
-                format!("can\'t get if mac due to {} error", err.to_string()),
+                format!("can\'t get if mac due to \"{}\"", err.to_string()),
             )
         );
     }
@@ -1314,7 +1376,7 @@ fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), 
         ),
     };
 
-    let address: ccs::SOCKADDR_INET = match addr {
+    let (address, lt): (ccs::SOCKADDR_INET, u32) = match addr {
         IpAddr::V4(ipv4) => {
             let sockaddr: ccs::sockaddr_in = ccs::sockaddr_in {
                 sin_family: ccs::AF_INET as i16,
@@ -1323,7 +1385,7 @@ fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), 
                 sin_zero: [0; 8]
             };
 
-            ccs::SOCKADDR_INET { ipv4: sockaddr }
+            (ccs::SOCKADDR_INET { ipv4: sockaddr }, 0)
         },
         IpAddr::V6(ipv6) => {
             let sockaddr: ccs::sockaddr_in6 = ccs::sockaddr_in6 {
@@ -1334,7 +1396,7 @@ fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), 
                 sin6_scope_id: 0
             };
 
-            ccs::SOCKADDR_INET { ipv6: sockaddr }
+            (ccs::SOCKADDR_INET { ipv6: sockaddr }, 0xFFFFFFFF)
         },
     };
 
@@ -1344,8 +1406,8 @@ fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), 
         index,
         prefix_origin: 0x01,
         suffix_origin: 0x01,
-        valid_lifetime: 3600,
-        preferred_lifetime: 1800,
+        valid_lifetime: lt,
+        preferred_lifetime: lt,
         on_link_prefix_length: prefix,
         skip_as_source: 0,
         dad_state: 0,
@@ -1359,7 +1421,12 @@ fn virtual_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), 
     if result != 0 {
         let err: WinAPIError = match WinAPIError::try_from(result) {
             Ok(err) => err,
-            Err(_) => todo!(),
+            Err(_) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Unknown,
+                    format!("got {} error while creating virtual ip", result)
+                )
+            ),
         };
         let message: &str = err.to_str();
 
@@ -1412,13 +1479,80 @@ fn delete_ip_linux(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), Cur
 }
 
 #[cfg(target_os = "windows")]
-fn delete_ip_windows(interface: &str, addr: &IpAddr, _: u8) -> Result<(), CursedErrorHandle> {
-    let query: String = match addr {
-        IpAddr::V4(ipv4) => format!("netsh interface ipv4 delete address \"{}\" {}", interface, ipv4),
-        IpAddr::V6(ipv6) => format!("netsh interface ipv6 delete address \"{}\" {}", interface, ipv6),
+fn delete_ip_windows(interface: &str, addr: &IpAddr, prefix: u8) -> Result<(), CursedErrorHandle> {
+    let index: u32 = match interface.parse() {
+        Ok(index) => index,
+        Err(err) => return Err(
+            CursedErrorHandle::new(
+                CursedError::Data(CursedErrorType::Parse),
+                format!("can\'t parse {} as interface index due to \"{}\"", interface, err.to_string()),
+            )
+        ),
     };
 
-    run_queries(&[("/C", &query)], "cmd")
+    let address: ccs::SOCKADDR_INET = match addr {
+        IpAddr::V4(ipv4) => {
+            let sockaddr: ccs::sockaddr_in = ccs::sockaddr_in {
+                sin_family: ccs::AF_INET as i16,
+                sin_port: 0,
+                sin_addr: ccs::in_addr { s_addr: ipv4.octets() },
+                sin_zero: [0; 8]
+            };
+
+            ccs::SOCKADDR_INET { ipv4: sockaddr }
+        },
+        IpAddr::V6(ipv6) => {
+            let sockaddr: ccs::sockaddr_in6 = ccs::sockaddr_in6 {
+                sin6_family: ccs::AF_INET6 as i16,
+                sin6_port: 0,
+                sin6_flowinfo: 0,
+                sin6_addr: ccs::in6_addr { s6_addr: ipv6.octets() },
+                sin6_scope_id: 0
+            };
+
+            ccs::SOCKADDR_INET { ipv6: sockaddr }
+        },
+    };
+
+    let unicast: ccs::MIB_UNICASTIPADDRESS_ROW = ccs::MIB_UNICASTIPADDRESS_ROW {
+        address,
+        luid: 0,
+        index,
+        prefix_origin: 0,
+        suffix_origin: 0,
+        valid_lifetime: 0,
+        preferred_lifetime: 0,
+        on_link_prefix_length: prefix,
+        skip_as_source: 0,
+        dad_state: 0,
+        scope_id: 0,
+        timestamp: 0
+    };
+
+    let result: u32 = unsafe {
+        ccs::DeleteUnicastIpAddressEntry(&unicast)
+    };
+    if result != 0 {
+        let err: WinAPIError = match WinAPIError::try_from(result) {
+            Ok(err) => err,
+            Err(_) => return Err(
+                CursedErrorHandle::new(
+                    CursedError::Unknown,
+                    format!("got {} error while creating virtual ip", result)
+                )
+            ),
+        };
+        let message: &str = err.to_str();
+
+        return Err(
+            CursedErrorHandle::new(
+                err.into(),
+                format!("got {} ({}) error while creating virtual ip", message, result)
+            )
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]

@@ -124,7 +124,7 @@ impl Tun {
 
     #[cfg(target_os = "linux")]
     fn open_linux(interface: &str, _: bool) -> Result<Self, CursedErrorHandle> {
-        let _ = get_interface_info(interface)?;
+        let _ = get_interface_by_name(interface)?;
         
         const TUN_PATH: &'static str = "/dev/net/tun";
 
@@ -134,7 +134,7 @@ impl Tun {
                 return Err(CursedErrorHandle::new(
                     CursedError::Data(CursedErrorType::Parse),
                     format!(
-                        "{} is not valid c string can\'t convert it due to {}",
+                        "{} is not valid c string can\'t convert it due to \"{}\"",
                         TUN_PATH,
                         err.to_string()
                     ),
@@ -152,7 +152,7 @@ impl Tun {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::from(err.kind()),
-                    format!("can\'t open tun adapter due to {} error", err.to_string()),
+                    format!("can\'t open tun adapter due to \"{}\"", err.to_string()),
                 )
             );
         }
@@ -163,7 +163,7 @@ impl Tun {
                 return Err(CursedErrorHandle::new(
                     CursedError::Data(CursedErrorType::Parse),
                     format!(
-                        "{} is not valid c string can\'t convert it due to {}",
+                        "{} is not valid c string can\'t convert it due to \"{}\"",
                         interface,
                         err.to_string()
                     ),
@@ -189,7 +189,7 @@ impl Tun {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::from(err.kind()),
-                    format!("can\'t open tun adapter due to {} error", err.to_string()),
+                    format!("can\'t open tun adapter due to \"{}\"", err.to_string()),
                 )
             );
         }
@@ -427,7 +427,7 @@ impl Tun {
         Ok(())
     }
 
-    fn route_all(&self, routes: &[(&Ipv4Addr, &str)]) -> Result<(), CursedErrorHandle> {
+    fn route_all(&self, routes: &[(&IpAddr, &str)]) -> Result<(), CursedErrorHandle> {
         #[cfg(target_os = "linux")]
         {
             self.route_all_linux(routes)
@@ -450,7 +450,7 @@ impl Tun {
     }
 
     #[cfg(target_os = "linux")]
-    fn route_all_linux(&self, routes: &[(&Ipv4Addr, &str)]) -> Result<(), CursedErrorHandle> {
+    fn route_all_linux(&self, routes: &[(&IpAddr, &str)]) -> Result<(), CursedErrorHandle> {
         let route_add_128_query: String = format!("ip route add 128/1 dev \"{}\"", self.interface);
         let route_add_0_query: String = format!("ip route add 0/1 dev \"{}\"", self.interface);
         
@@ -472,7 +472,11 @@ impl Tun {
         run_queries(&queries, "sh")?;
 
         for route in routes {
-            let route_query: String = format!("-c ip route add \"{}\"/32 dev \"{}\"", route.0, route.1);
+            let prefix: u8 = match route.0 {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            };
+            let route_query: String = format!("-c ip route add \"{}\"/{} dev \"{}\"", route.0, prefix, route.1);
 
             run_queries(&[("-c", &route_query)], "sh")?
         }
@@ -481,7 +485,7 @@ impl Tun {
     }
 
     #[cfg(target_os = "windows")]
-    fn route_all_windows(&self, routes: &[(&Ipv4Addr, &str)]) -> Result<(), CursedErrorHandle> {
+    fn route_all_windows(&self, routes: &[(&IpAddr, &str)]) -> Result<(), CursedErrorHandle> {
         let route_query: String = format!("route add 0.0.0.0 MASK 0.0.0.0 0.0.0.0 IF {} METRIC 3", self.index); 
 
         const QUERIES_SIZE: usize = 1;
@@ -502,7 +506,10 @@ impl Tun {
                 ),
             };
 
-            let route_add_query: String = format!("/C route add \"{}\" MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", route.0, index);
+            let route_add_query: String = match route.0 {
+                IpAddr::V4(ipv4) => format!("route add {} MASK 255.255.255.255 0.0.0.0 IF {} METRIC 3", ipv4, index),
+                IpAddr::V6(ipv6) => format!("route -6 add {}/128 0.0.0.0 IF {} METRIC 3", ipv6, index),
+            };
             run_queries(&[("/C", &route_add_query)], "cmd")?
         }
 

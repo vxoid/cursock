@@ -60,17 +60,28 @@ impl Clone for in_addr {
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 impl Copy for in_addr {}
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "linux")]
+#[repr(C)]
+pub struct sockaddr_in6 {
+    pub sin6_family: u16,
+    pub sin6_port: u16,
+    pub sin6_flowinfo: u32,
+    pub sin6_addr: in6_addr,
+    pub sin6_scope_id: u32,
+    pub sin6_prefixlen: u32
+}
+
+#[cfg(target_os = "windows")]
 #[repr(C)]
 pub struct sockaddr_in6 {
     pub sin6_family: i16,
     pub sin6_port: u16,
     pub sin6_flowinfo: u32,
     pub sin6_addr: in6_addr,
-    pub sin6_scope_id: u32
+    pub sin6_scope_id: u32,
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "windows")]
 impl Clone for sockaddr_in6 {
     fn clone(&self) -> Self {
         Self {
@@ -82,7 +93,7 @@ impl Clone for sockaddr_in6 {
         }
     }
 }
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "windows")]
 impl Copy for sockaddr_in6 {}
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]

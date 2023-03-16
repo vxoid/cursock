@@ -26,6 +26,13 @@ extern "C" {
         dest_addr: *const sockaddr,
         addrlen: SocklenT,
     ) -> isize;
+    pub fn setsockopt(
+        sockfd: i32,
+        level: i32,
+        optname: i32,
+        optval: *const std::os::raw::c_void,
+        optlen: u32
+    ) -> i32;
     pub fn write(fd: i32, buf: *const std::os::raw::c_void, count: usize) -> isize;
     pub fn read(fd: i32, buf: *mut std::os::raw::c_void, count: usize) -> isize;
     pub fn bind(sockfd: i32, addr: *const sockaddr, addrlen: SocklenT) -> i32;
@@ -49,10 +56,9 @@ extern "system" {
         size: *mut u32
     ) -> u32;
     pub fn CreateUnicastIpAddressEntry(row: *const MIB_UNICASTIPADDRESS_ROW) -> u32;
+    pub fn DeleteUnicastIpAddressEntry(row: *const MIB_UNICASTIPADDRESS_ROW) -> u32;
     pub fn ConvertInterfaceLuidToIndex(luid: *const u64, index: *mut u32) -> u32;
     pub fn InitializeUnicastIpAddressEntry(row: *mut MIB_UNICASTIPADDRESS_ROW);
-    pub fn CreateIpNetEntry(entry: *mut MIB_IPNETROW) -> u32;
-    pub fn DeleteIpNetEntry(entry: *mut MIB_IPNETROW) -> u32;
 }
 
 #[link(name = "wpcap", kind = "static")]

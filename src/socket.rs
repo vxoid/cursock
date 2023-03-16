@@ -26,6 +26,7 @@ pub struct Socket {
     socket: i32,
     #[cfg(target_os = "windows")]
     adapter: usize,
+    prefixlen: u8,
     src_ip: IpAddr,
     src_mac: Mac,
 }
@@ -56,6 +57,7 @@ impl Socket {
             let _ = debug;
             let _ = prefered;
             let _ = interface;
+            
             Err(CursedErrorHandle::new(
                 CursedError::Other(CursedErrorType::NotSupported),
                 format!("{} is not supported yet!", std::env::consts::OS),
@@ -145,6 +147,7 @@ impl Socket {
     }
 
     getters!(
+        pub get_prefix_len(prefixlen) -> u8;
         pub get_src_ip(src_ip) -> IpAddr;
         pub get_src_mac(src_mac) -> Mac;
     );
@@ -165,19 +168,19 @@ impl Socket {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::from(err.kind()),
-                    format!("can\'t init socket to {} error", err.to_string()),
+                    format!("can\'t init socket due to \"{}\"", err.to_string()),
                 )
             );
         }
 
-        let (ipv4, ipv6, src_mac, index) = get_interface_info(interface)?;
-        let src_ip: IpAddr = {
+        let (ipv4, ipv6, src_mac, index) = get_interface_by_name(interface)?;
+        let (src_ip, prefixlen): (IpAddr, u8) = {
             match prefered {
                 IpVersions::V4 => {
                     if let Some(ipv4) = ipv4 {
-                        IpAddr::V4(ipv4)
+                        (IpAddr::V4(ipv4.0), ipv4.1)
                     } else if let Some(ipv6) = ipv6 {
-                        IpAddr::V6(ipv6)
+                        (IpAddr::V6(ipv6.0), ipv6.1)
                     } else {
                         return Err(
                             CursedErrorHandle::new(
@@ -189,9 +192,9 @@ impl Socket {
                 },
                 IpVersions::V6 => {
                     if let Some(ipv6) = ipv6 {
-                        IpAddr::V6(ipv6)
+                        (IpAddr::V6(ipv6.0), ipv6.1)
                     } else if let Some(ipv4) = ipv4 {
-                        IpAddr::V4(ipv4)
+                        (IpAddr::V4(ipv4.0), ipv4.1)
                     } else {
                         return Err(
                             CursedErrorHandle::new(
@@ -219,6 +222,7 @@ impl Socket {
             src_mac,
             src_ip,
             index,
+            prefixlen
         })
     }
     #[cfg(target_os = "windows")]
@@ -234,38 +238,39 @@ impl Socket {
         };
 
         let (ipv4, ipv6, src_mac, guid) = get_interface_by_index(index)?;
-        let src_ip: IpAddr = {
+        let (src_ip, prefixlen): (IpAddr, u8) = {
             match prefered {
                 IpVersions::V4 => {
                     if let Some(ipv4) = ipv4 {
-                        IpAddr::V4(ipv4)
+                        (IpAddr::V4(ipv4.0), ipv4.1)
                     } else if let Some(ipv6) = ipv6 {
-                        IpAddr::V6(ipv6)
+                        (IpAddr::V6(ipv6.0), ipv6.1)
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::Address(CursedErrorType::NotFound),
-                                format!("{} interface has no ipv4 or ipv6 addresses", index)
+                                CursedError::Address(CursedErrorType::NotEnough),
+                                format!("{} interface has no ipv4 or ipv6 addresses", interface)
                             )
                         );
                     }
                 },
                 IpVersions::V6 => {
                     if let Some(ipv6) = ipv6 {
-                        IpAddr::V6(ipv6)
+                        (IpAddr::V6(ipv6.0), ipv6.1)
                     } else if let Some(ipv4) = ipv4 {
-                        IpAddr::V4(ipv4)
+                        (IpAddr::V4(ipv4.0), ipv4.1)
                     } else {
                         return Err(
                             CursedErrorHandle::new(
-                                CursedError::Address(CursedErrorType::NotFound),
-                                format!("{} interface has no ipv4 or ipv6 addresses", index)
+                                CursedError::Address(CursedErrorType::NotEnough),
+                                format!("{} interface has no ipv4 or ipv6 addresses", interface)
                             )
                         );
                     }
                 }
             }
         };
+
 
         if debug {
             println!("{} - ip: {}, mac: {}, guid: {}", index, src_ip, src_mac, guid);
@@ -278,7 +283,7 @@ impl Socket {
                 return Err(CursedErrorHandle::new(
                     CursedError::Data(CursedErrorType::Parse),
                     format!(
-                        "{} is not valid c string can\'t convert it due to {}",
+                        "{} is not valid c string can\'t convert it due to \"{}\"",
                         pcap_interface,
                         err.to_string()
                     ),
@@ -303,7 +308,7 @@ impl Socket {
             return Err(CursedErrorHandle::new(
                 CursedError::Connection(CursedErrorType::Refused),
                 format!(
-                    "Can\'t open adapted due to {}",
+                    "Can\'t open adapted due to \"{}\"",
                     str_from_cstr(error_buffer.as_ptr())
                 ),
             ));
@@ -313,6 +318,7 @@ impl Socket {
             adapter: adapter as usize,
             src_ip,
             src_mac,
+            prefixlen
         })
     }
     #[cfg(target_os = "linux")]
@@ -338,7 +344,7 @@ impl Socket {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::from(err.kind()),
-                    format!("can\'t read raw packet due to {} error", err.to_string()),
+                    format!("can\'t read raw packet due to \"{}\"", err.to_string()),
                 )
             );
         }
@@ -436,7 +442,7 @@ impl Socket {
             return Err(
                 CursedErrorHandle::new(
                     CursedError::from(err.kind()),
-                    format!("can\'t send raw packet due to {} error", err.to_string()),
+                    format!("can\'t send raw packet due to \"{}\"", err.to_string()),
                 )
             );
         }
