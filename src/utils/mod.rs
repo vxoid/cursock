@@ -1197,11 +1197,14 @@ pub fn get_interface_by_name(interface: &str) -> Result<(Option<(Ipv4Addr, u8)>,
             let r_current: &mut ccs::ifaddrs = unsafe {
                 &mut *current
             };
-            let family: i32 = unsafe {
-                (*r_current.ifa_addr).sa_family as i32
+            if r_current.ifa_addr.is_null() {
+                continue
+            }
+            let r_addr: &mut ccs::sockaddr = unsafe {
+                &mut *r_current.ifa_addr
             };
 
-            match family {
+            match r_addr.sa_family as i32 {
                 ccs::AF_INET => if let None = ipv4 {
                     let addr: &mut ccs::sockaddr_in = unsafe {
                         &mut *(r_current.ifa_addr as *mut ccs::sockaddr_in)
