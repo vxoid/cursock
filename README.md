@@ -1,28 +1,36 @@
-# Cursock
+# Cursock v1.0.1
 Crate for raw socketing, can send raw packets and some protocols
 
+## Changelog
+- Reimplemented Icmp and Arp protos
+- removed `curerr` crate, now using std::io::Error for error handling
+- Added Adapter struct
+
 ## Protocols
-- [x] Arp
+- Arp
+- Icmp
 
 ## Platforms
-- [x] Windows (npcap)
-- [x] Linux
+- Windows (npcap)
+- Linux
 
 ## Links
-- [x] docs.rs - https://docs.rs/cursock
-- [x] github - https://github.com/CURVoid/cursock.git
+- docs.rs - https://docs.rs/cursock
+- github - https://github.com/CURVoid/cursock.git
 
 ## Examples
 ```rust
+use cursock::*;
+use cursock::utils::*;
+
 #[cfg(target_os = "linux")]
-let socket = cursock::Socket::new("wlan0", true).expect("initialize error"); // Linux
+let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error"); // Linux
 #[cfg(target_os = "windows")]
-let socket = cursock::Socket::new("{D37YDFA1-7F4F-F09E-V622-5PACEF22AE49}", true).expect("initialize error"); // Windows
-// Since windows socket implementation is using npcap you should pass "npcap-like" interface
+let socket = Socket::new("10", IpVer::V6).expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
 
 let buffer: [u8; 1024] = [0; 1024];
 
-socket.send_raw_packet(&buffer, true).expect("send error");
+socket.send_raw_packet(&buffer).expect("send error");
 
 socket.destroy()
 ```

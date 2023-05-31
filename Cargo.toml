@@ -1,13 +1,13 @@
 [package]
 name = "cursock"
-version = "1.2.0"
+version = "1.2.3"
 edition = "2021"
 license = "Apache-2.0"
 documentation = "https://docs.rs/cursock"
 repository = "https://github.com/CURVoid/cursock.git"
 homepage = "https://github.com/CURVoid/cursock.git"
 keywords = ["cursock", "networking", "socket", "raw", "arp"]
-description = "Crate for raw socketing, can send raw packets and some protocols from linux os and windows using npcap for 2nd"
+description = "Crate for raw socketing, can be used for sending raw packets and some protocols"
 
 [dependencies]
-curerr = "1.0.1"
+rand = "0.8.5"

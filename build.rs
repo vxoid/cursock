@@ -1,13 +1,6 @@
 fn main() {
     let target_os: String = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or("unknown".to_string());
     let target_abi: String = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or("unknown".to_string());
-    
-    println!(
-        "cargo:warning=Building cursock from {} for {}-{}!",
-        std::env::consts::OS,
-        target_os,
-        target_abi
-    );
 
     let out_dir: String = std::env::var("OUT_DIR").expect("Can\'t get out dir");
 

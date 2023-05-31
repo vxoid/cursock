@@ -1,3 +1,5 @@
+use std::net;
+
 #[macro_export]
 macro_rules! getters {
     (
@@ -24,42 +26,11 @@ macro_rules! setters {
     };
 }
 
-#[macro_export]
-macro_rules! callback {
-    ($arg: expr) => {
-        $arg
-    };
-    ($callback: expr, $arg: expr) => {
-        $callback(&$arg)
-    }
-}
-
-#[macro_export]
-macro_rules! timeout {
-    {
-        $vis:vis $fnname:ident($($argname:ident: $arg:ty $(=> $callback: expr)?), *) -> $return:ty, $fn:expr
-    } => {
-        $vis fn $fnname($($argname: $arg,)* time: std::time::Duration) -> Option<$return> {
-            use std::thread;
-
-            let (tx, rx) = std::sync::mpsc::channel();
-
-            thread::spawn(move || {
-                let _ = tx.send($fn($(callback!($($callback, )?$argname),)*));
-            });
-    
-            let result: $return = match rx.recv_timeout(time) {
-                Ok(result) => result,
-                Err(_) => return None,
-            };
-            
-            Some(result)
-        }
-    }
-}
-
 pub const HW_TYPE: u16 = 1;
 pub const ARP_REPLY: u16 = 2;
+pub const MAC_LEN: usize = 6;
+pub const IPV4_LEN: usize = 4;
+pub const IPV6_LEN: usize = 16;
 pub const ARP_REQUEST: u16 = 1;
 pub const IP_PROTO: u16 = 0x0800;
 pub const ARP_PROTO: u16 = 0x0806;
@@ -67,12 +38,10 @@ pub const ICMP_PROTO: u16 = 0x0001;
 pub const ICMP_ECHO_REQUEST: u8 = 8;
 pub const ICMP_ECHO_RESPONSE: u8 = 0;
 pub const EMPTY_ARRAY: [i8; 1] = [0];
-pub const ICMP_HEADER_SIZE: usize = std::mem::size_of::<IcmpHeader>();
+pub const IPV4_HEADER_SIZE: usize = std::mem::size_of::<IpV4Header>();
 pub const ARP_HEADER_SIZE: usize = std::mem::size_of::<ArpHeader>();
 pub const ETH_HEADER_SIZE: usize = std::mem::size_of::<EthHeader>();
-pub const IP_HEADER_SIZE: usize = std::mem::size_of::<IpHeader>();
-pub const IPV4_LEN: usize = 4;
-pub const MAC_LEN: usize = 6;
+pub const ICMPV4_HEADER_SIZE: usize = std::mem::size_of::<IcmpV4Header>();
 
 /// trait for binary operations should be implemented on integers
 /// # Examples
@@ -111,55 +80,6 @@ pub trait BinOpers {
     fn get_bit(&self, index: usize) -> Bit;
     fn set_bit(&self, value: Bit, index: usize) -> Self;
 }
-/// trait for conveting one type into other similar to the From trait
-/// # Examples
-/// ```
-/// use cursock::utils::*;
-///
-/// enum Bit {
-///     One,
-///     Zero
-/// }
-///
-/// impl Handle<bool> for Bit {
-///     fn from(value: bool) -> Self {
-///         match value {
-///             true => Self::One,
-///             false => Self::Zero
-///         }
-///     }
-///     fn to(&self) -> bool {
-///         match *self {
-///             Self::One => true,
-///             Self::Zero => false,
-///         }
-///     }
-/// }
-///
-/// let boolean: bool = Bit::Zero.to();
-///
-/// assert_eq!(boolean, false)
-/// ```
-pub trait Handle<T> {
-    fn from(value: T) -> Self;
-    fn to(&self) -> T;
-}
-
-/// struct for representing ipv4 addresses
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let ip_addr: Ipv4 = Handle::from([192, 168, 1, 1]);
-///
-/// let ip_octets: [u8; IPV4_LEN] = ip_addr.to(); // Basicly IPV4_LEN is count of octets of ipv4 (4)
-///
-/// assert_eq!(ip_octets, [192, 168, 1, 1])
-/// ```
-pub struct Ipv4 {
-    ip_addr: [u8; IPV4_LEN],
-}
 
 /// struct for representing mac addresses
 ///
@@ -173,24 +93,15 @@ pub struct Ipv4 {
 ///
 /// assert_eq!(mac_octets, [0xff; MAC_LEN])
 /// ```
+#[derive(Clone)]
 pub struct Mac {
     mac_addr: [u8; MAC_LEN],
 }
 
-/// wrapper around type's pointer simple to box or arc smart pointer
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let a = 1;
-///
-/// let a_wrapper = Wrapper::new(&a);
-///
-/// assert_eq!(*a_wrapper.reference(), a)
-/// ```
-pub struct Wrapper<T: ?Sized> {
-    pointer: *const T,
+/// enum with ip versions
+pub enum IpVer {
+    V4,
+    V6
 }
 
 /// arp header
@@ -209,7 +120,7 @@ pub struct ArpHeader {
 
 /// icmp header
 #[repr(C)]
-pub struct IcmpHeader {
+pub struct IcmpV4Header {
     pub type_: u8,
     pub code: u8,
     pub check: u16,
@@ -227,7 +138,7 @@ pub struct EthHeader {
 
 /// ip header
 #[repr(C)]
-pub struct IpHeader {
+pub struct IpV4Header {
     pub verihl: u8,
     pub tos: u8,
     pub tot_len: u16,
@@ -238,6 +149,22 @@ pub struct IpHeader {
     pub check: u16,
     pub saddr: [u8; IPV4_LEN],
     pub daddr: [u8; IPV4_LEN],
+}
+
+/// wrapper around type's pointer simple to box or arc smart pointer
+///
+/// # Example
+/// ```
+/// use cursock::utils::*;
+///
+/// let a = 1;
+///
+/// let a_wrapper = Wrapper::new(&a);
+///
+/// assert_eq!(*a_wrapper.reference(), a)
+/// ```
+pub struct Wrapper<T: ?Sized> {
+    pointer: *const T,
 }
 
 /// arp header wrapper with fields that contains only addresses
@@ -261,8 +188,8 @@ pub struct IpHeader {
 pub struct ArpResponse {
     src_mac: Mac,
     dst_mac: Mac,
-    src_ip: Ipv4,
-    dst_ip: Ipv4,
+    src_ip: net::Ipv4Addr,
+    dst_ip: net::Ipv4Addr,
 }
 
 /// an ip header wrapper without useless fields
@@ -271,8 +198,8 @@ pub struct ArpResponse {
 pub struct IpData {
     total_len: u16,
     ttl: u8,
-    src: Ipv4,
-    dst: Ipv4
+    src: net::IpAddr,
+    dst: net::IpAddr
 }
 
 /// an icmp header wrapper without useless fields
@@ -281,6 +208,8 @@ pub struct IpData {
 pub struct IcmpData {
     type_: IcmpType,
     code: u8,
+    id: u16,
+    sq: u16,
     checksum: u16,
     data: Vec<u8>
 }
@@ -296,6 +225,7 @@ pub struct IcmpData {
 /// 
 /// assert_eq!(raw_echo_reply, 0)
 /// ```
+#[derive(Clone)]
 pub enum IcmpType {
     SKIP,
     Reserved,
@@ -343,12 +273,13 @@ pub enum IcmpType {
 /// assert_eq!(boolean_bit, false);
 /// assert_eq!(decimal_bit, 0)
 /// ```
+#[derive(Clone)]
 pub enum Bit {
     One,
     Zero,
 }
 
-impl Handle<u8> for IcmpType {
+impl From<u8> for IcmpType {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::EchoReply,
@@ -383,10 +314,11 @@ impl Handle<u8> for IcmpType {
             _ => Self::Unassigned
         }
     }
+}
 
-    fn to(&self) -> u8 {
-
-        match *self {
+impl Into<u8> for IcmpType {
+    fn into(self) -> u8 {
+        match self {
             IcmpType::SKIP => 39,
             IcmpType::Reserved => 19,
             IcmpType::Redirect => 5,
@@ -421,75 +353,87 @@ impl Handle<u8> for IcmpType {
     }
 }
 
+impl PartialEq for IcmpType {
+    fn eq(&self, other: &Self) -> bool {
+        let byte: u8 = self.clone().into();
+        byte == other.clone().into()
+    }
+}
+
+impl IpVer {
+    pub fn prefered(&self, v4: Option<net::Ipv4Addr>, v6: Option<net::Ipv6Addr>) -> Option<net::IpAddr> {
+        match (self, v4, v6) {
+            (IpVer::V4, None, Some(v6)) => Some(net::IpAddr::V6(v6)),
+            (IpVer::V4, Some(v4), _) => Some(net::IpAddr::V4(v4)),
+            (IpVer::V6, _, Some(v6)) => Some(net::IpAddr::V6(v6)),
+            (IpVer::V6, Some(v4), None) => Some(net::IpAddr::V4(v4)),
+            _ => None
+        }
+    }
+}
+
 impl IpData {
-    pub fn new(total_len: u16, ttl: u8, src: Ipv4, dst: Ipv4) -> Self {
+    pub fn new(total_len: u16, ttl: u8, src: net::IpAddr, dst: net::IpAddr) -> Self {
         Self { total_len, ttl, src, dst }
     }
     
     getters!(
         pub get_total_len(total_len) -> u16;
         pub get_ttl(ttl) -> u8;
-        pub get_src(src) -> Ipv4;
-        pub get_dst(dst) -> Ipv4;
+        pub get_src(src) -> net::IpAddr;
+        pub get_dst(dst) -> net::IpAddr;
     );
     setters!(
         pub set_total_len(u16) -> total_len;
         pub set_ttl(u8) -> ttl;
-        pub set_src(Ipv4) -> src;
-        pub set_dst(Ipv4) -> dst;
+        pub set_src(net::IpAddr) -> src;
+        pub set_dst(net::IpAddr) -> dst;
     );
 }
 
 impl IcmpData {
-    pub fn new(type_: IcmpType, code: u8, checksum: u16, data: Vec<u8>) -> Self {
-        Self { type_, code, checksum, data }
+    pub fn new(type_: IcmpType, code: u8, checksum: u16, id: u16, sq: u16, data: Vec<u8>) -> Self {
+        Self { type_, code, checksum, id, sq, data }
     }
 
     getters!(
         pub get_type(type_) -> IcmpType;
         pub get_code(code) -> u8;
         pub get_checksum(checksum) -> u16;
-        pub get_data(data) -> Vec<u8>;
+        pub get_id(id) -> u16;
+        pub get_sq(sq) -> u16;
+        pub get_data(data) -> [u8];
     );
 
     setters!(
         pub set_type(IcmpType) -> type_;
         pub set_code(u8) -> code;
         pub set_checksum(u16) -> checksum;
+        pub set_id(u16) -> id;
+        pub set_sq(u16) -> sq;
         pub set_data(Vec<u8>) -> data;
     );
 }
 
-impl<T: ?Sized> Wrapper<T> {
-    pub fn new(pointer: *const T) -> Self {
-        Self { pointer }
-    }
-    pub fn reference(&self) -> &T {
-        unsafe { &*self.pointer }
-    }
-    pub fn mut_reference(&self) -> &mut T {
-        unsafe { &mut *(self.pointer as *mut T) }
-    }
-}
-
-unsafe impl<T: ?Sized> Send for Wrapper<T> {}
-
-impl Handle<bool> for Bit {
+impl From<bool> for Bit {
     fn from(value: bool) -> Self {
         match value {
             true => Self::One,
             false => Self::Zero,
         }
     }
-    fn to(&self) -> bool {
-        match *self {
+}
+
+impl Into<bool> for Bit {
+    fn into(self) -> bool {
+        match self {
             Self::One => true,
             Self::Zero => false,
         }
     }
 }
 
-impl Handle<u8> for Bit {
+impl From<u8> for Bit {
     fn from(value: u8) -> Self {
         match value {
             1 => Self::One,
@@ -503,28 +447,39 @@ impl Handle<u8> for Bit {
             }
         }
     }
-    fn to(&self) -> u8 {
-        match *self {
+}
+
+impl Into<u8> for Bit {
+    fn into(self) -> u8 {
+        match self {
             Self::One => 1,
             Self::Zero => 0,
         }
     }
 }
 
-impl Clone for Mac {
-    fn clone(&self) -> Self {
-        Self {
-            mac_addr: self.mac_addr.clone(),
-        }
-    }
-}
-
-impl Handle<[u8; MAC_LEN]> for Mac {
+impl From<[u8; MAC_LEN]> for Mac {
     fn from(mac_addr: [u8; MAC_LEN]) -> Self {
         Self { mac_addr }
     }
-    fn to(&self) -> [u8; MAC_LEN] {
-        self.mac_addr.clone()
+}
+
+impl Into<[u8; MAC_LEN]> for Mac {
+    fn into(self) -> [u8; MAC_LEN] {
+        self.mac_addr
+    }
+}
+
+
+impl<T: ?Sized> Wrapper<T> {
+    pub fn new(pointer: *const T) -> Self {
+        Self { pointer }
+    }
+    pub fn reference(&self) -> &T {
+        unsafe { &*self.pointer }
+    }
+    pub fn mut_reference(&self) -> &mut T {
+        unsafe { &mut *(self.pointer as *mut T) }
     }
 }
 
@@ -543,53 +498,9 @@ impl std::fmt::Display for Mac {
     }
 }
 
-impl Clone for Ipv4 {
-    fn clone(&self) -> Self {
-        Self {
-            ip_addr: self.ip_addr.clone(),
-        }
-    }
-}
-
-impl Handle<[u8; IPV4_LEN]> for Ipv4 {
-    fn from(ip_addr: [u8; IPV4_LEN]) -> Self {
-        Self { ip_addr }
-    }
-    fn to(&self) -> [u8; IPV4_LEN] {
-        self.ip_addr.clone()
-    }
-}
-
-impl std::fmt::Display for Ipv4 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}.{}.{}.{}",
-            self.ip_addr[0], self.ip_addr[1], self.ip_addr[2], self.ip_addr[3],
-        )
-    }
-}
-
-impl Handle<u32> for Ipv4 {
-    fn from(value: u32) -> Self {
-        let o1: u8 = (value & 0xff) as u8;
-        let o2: u8 = ((value >> 8) & 0xff) as u8;
-        let o3: u8 = ((value >> 16) & 0xff) as u8;
-        let o4: u8 = ((value >> 24) & 0xff) as u8;
-
-        Handle::from([o4, o3, o2, o1])
-    }
-    fn to(&self) -> u32 {
-        ((self.ip_addr[0] as u32) << 24)
-            + ((self.ip_addr[1] as u32) << 16)
-            + ((self.ip_addr[2] as u32) << 8)
-            + ((self.ip_addr[3] as u32) << 0)
-    }
-}
-
 impl BinOpers for u32 {
     fn get_bit(&self, index: usize) -> Bit {
-        Handle::from((self.clone() >> index & 1) as u8)
+        Bit::from((self.clone() >> index & 1) as u8)
     }
     fn set_bit(&self, value: Bit, index: usize) -> Self {
         match value {
@@ -606,7 +517,7 @@ impl BinOpers for u32 {
 }
 
 impl ArpResponse {
-    pub fn new(src_ip: Ipv4, src_mac: Mac, dst_ip: Ipv4, dst_mac: Mac) -> Self {
+    pub fn new(src_ip: net::Ipv4Addr, src_mac: Mac, dst_ip: net::Ipv4Addr, dst_mac: Mac) -> Self {
         Self {
             src_ip,
             src_mac,
@@ -617,15 +528,15 @@ impl ArpResponse {
 
     getters!(
         pub get_src_mac(src_mac) -> Mac;
-        pub get_src_ip(src_ip) -> Ipv4;
+        pub get_src_ip(src_ip) -> net::Ipv4Addr;
         pub get_dst_mac(dst_mac) -> Mac;
-        pub get_dst_ip(dst_ip) -> Ipv4;
+        pub get_dst_ip(dst_ip) -> net::Ipv4Addr;
     );
     setters!(
         pub set_src_mac(Mac) -> src_mac;
-        pub set_src_ip(Ipv4) -> src_ip;
+        pub set_src_ip(net::Ipv4Addr) -> src_ip;
         pub set_dst_mac(Mac) -> dst_mac;
-        pub set_dst_ip(Ipv4) -> dst_ip;
+        pub set_dst_ip(net::Ipv4Addr) -> dst_ip;
     );
 }
 
@@ -700,13 +611,10 @@ pub fn memcpy<TD, TS>(dest: *mut TD, src: *const TS, size: usize) -> *mut TD {
 /// assert_eq!(str_from_bytes(bytes).as_bytes(), bytes)
 /// ```
 pub fn str_from_bytes(bytes: &[u8]) -> String {
-    let mut string: String = String::new();
-
-    for byte in bytes {
-        string.push(byte.clone() as char)
-    }
-
-    string
+    bytes
+        .into_iter()
+        .map(|u| u.clone() as char)
+        .collect()
 }
 
 /// creates string from char pointer

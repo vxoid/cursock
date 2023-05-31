@@ -1,8 +1,14 @@
 mod consts;
 mod structs;
+#[cfg(target_os = "windows")]
+mod iphlpapi;
+
+use std::os::raw::c_void;
 
 pub use consts::*;
 pub use structs::*;
+#[cfg(target_os = "windows")]
+pub use iphlpapi::*;
 
 #[cfg(target_os = "linux")]
 pub type SocklenT = u32;
@@ -12,7 +18,7 @@ pub type SocklenT = u32;
 extern "C" {
     pub fn recvfrom(
         socket: i32,
-        buffer: *mut std::os::raw::c_void,
+        buffer: *mut c_void,
         len: usize,
         flags: i32,
         src_addr: *mut sockaddr,
@@ -20,7 +26,7 @@ extern "C" {
     ) -> isize;
     pub fn sendto(
         sockfd: i32,
-        buf: *const std::os::raw::c_void,
+        buf: *const c_void,
         len: usize,
         flags: i32,
         dest_addr: *const sockaddr,
@@ -36,7 +42,13 @@ extern "C" {
 #[link(name = "iphlpapi")]
 #[cfg(target_os = "windows")]
 extern "C" {
-    pub fn GetAdaptersInfo(adapterinfo: *mut IP_ADAPTER_INFO, sizepointer: *mut u32) -> u32;
+    pub fn GetAdaptersAddresses(
+        Family: u32,
+        Flags: u32,
+        Reserved: *mut std::ffi::c_void,
+        AdapterAddresses: *mut IP_ADAPTER_ADDRESSES,
+        SizePointer: *mut u32,
+    ) -> u32;
 }
 
 #[link(name = "wpcap", kind = "static")]
@@ -57,23 +69,7 @@ extern "C" {
         errbuf: *mut i8,
     ) -> i32;
     pub fn pcap_next_ex(_: *mut pcap, _: *mut *mut pcap_pkthdr, _: *mut *const u8) -> i32;
-    pub fn pcap_inject(_: *mut pcap, _: *const std::os::raw::c_void, _: usize) -> i32;
+    pub fn pcap_inject(_: *mut pcap, _: *const c_void, _: usize) -> i32;
     pub fn pcap_sendpacket(_: *mut pcap, _: *const u8, _: i32) -> i32;
     pub fn pcap_geterr(_: *mut pcap) -> *mut i8;
-}
-
-pub const fn null<T>() -> *const T {
-    0 as *const T
-}
-
-pub const fn null_mut<T>() -> *mut T {
-    0 as *mut T
-}
-
-pub fn htons(u: u16) -> u16 {
-    u.to_be()
-}
-
-pub fn ntohs(u: u16) -> u16 {
-    u16::from_be(u)
 }

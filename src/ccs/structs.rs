@@ -1,6 +1,4 @@
-#[cfg(target_os = "windows")]
-use super::consts::*;
-
+#[derive(Clone, Copy)]
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[repr(C)]
 pub struct sockaddr {
@@ -8,18 +6,7 @@ pub struct sockaddr {
     pub sa_data: [i8; 14],
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-impl Copy for sockaddr {}
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-impl Clone for sockaddr {
-    fn clone(&self) -> Self {
-        sockaddr {
-            sa_family: self.sa_family.clone(),
-            sa_data: self.sa_data.clone(),
-        }
-    }
-}
-
+#[derive(Clone)]
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 #[repr(C)]
 pub struct sockaddr_in {
@@ -27,6 +14,33 @@ pub struct sockaddr_in {
     pub sin_port: u16,
     pub sin_addr: in_addr,
     pub sin_zero: [i8; 8],
+}
+
+#[derive(Clone)]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[repr(C)]
+pub struct in_addr {
+    pub s_addr: u32,
+}
+
+#[derive(Clone)]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[repr(C)]
+pub struct sockaddr_in6 {
+    pub sin6_family: u16,
+    pub sin6_port: u16,
+    pub sin6_flowinfo: u32,
+    pub sin6_addr: in6_addr,
+    pub sin6_scope_id: u32,
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub union in6_addr {
+    pub s6_addr: [u8; 16],
+    pub s6_addr16: [u16; 8],
+    pub s6_addr32: [u32; 4],
+    pub s6_addr128: u128
 }
 
 #[cfg(target_os = "linux")]
@@ -39,68 +53,6 @@ pub struct sockaddr_ll {
     pub sll_pkttype: u8,
     pub sll_halen: u8,
     pub sll_addr: [u8; 8],
-}
-
-#[cfg(target_os = "linux")]
-#[repr(C)]
-pub struct in_addr {
-    pub s_addr: u32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct in_addr {
-    pub s_un: S_un,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub union S_un {
-    pub s_un_b: S_un_b,
-    pub s_un_w: S_un_w,
-    pub s_addr: u32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct S_un_b {
-    pub s_b1: u8,
-    pub s_b2: u8,
-    pub s_b3: u8,
-    pub s_b4: u8,
-}
-
-#[cfg(target_os = "windows")]
-impl Copy for S_un_b {}
-#[cfg(target_os = "windows")]
-impl Clone for S_un_b {
-    fn clone(&self) -> Self {
-        Self {
-            s_b1: self.s_b1.clone(),
-            s_b2: self.s_b2.clone(),
-            s_b3: self.s_b3.clone(),
-            s_b4: self.s_b4.clone(),
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct S_un_w {
-    pub s_w1: u16,
-    pub s_w2: u16,
-}
-
-#[cfg(target_os = "windows")]
-impl Copy for S_un_w {}
-#[cfg(target_os = "windows")]
-impl Clone for S_un_w {
-    fn clone(&self) -> Self {
-        Self {
-            s_w1: self.s_w1.clone(),
-            s_w2: self.s_w2.clone(),
-        }
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -276,48 +228,4 @@ pub struct pcap_pkthdr {
 pub struct timeval {
     tv_sec: i32,
     tv_usec: i32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct IP_ADAPTER_INFO {
-    pub next: *mut IP_ADAPTER_INFO,
-    pub comboindex: u32,
-    pub adaptername: [i8; 260],
-    pub description: [i8; 132],
-    pub addresslength: u32,
-    pub address: [u8; 8],
-    pub index: u32,
-    pub type_: u32,
-    pub dhcpenabled: u32,
-    pub currentipaddress: *mut IP_ADDR_STRING,
-    pub ipaddresslist: IP_ADDR_STRING,
-    pub gatewaylist: IP_ADDR_STRING,
-    pub dhcpserver: IP_ADDR_STRING,
-    pub havewins: i32,
-    pub primarywinsserver: IP_ADDR_STRING,
-    pub secondarywinsserver: IP_ADDR_STRING,
-    pub leaseobtained: TimeT,
-    pub leaseexpires: TimeT,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct IP_ADDR_STRING {
-    pub next: *mut IP_ADDR_STRING,
-    pub ipaddress: IP_ADDRESS_STRING,
-    pub ipmask: IP_MASK_STRING,
-    pub context: u32,
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct IP_ADDRESS_STRING {
-    pub string: [i8; 16],
-}
-
-#[cfg(target_os = "windows")]
-#[repr(C)]
-pub struct IP_MASK_STRING {
-    pub string: [i8; 16],
 }
