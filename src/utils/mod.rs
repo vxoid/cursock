@@ -1,4 +1,5 @@
 use std::net;
+use std::ptr;
 
 #[macro_export]
 macro_rules! getters {
@@ -32,7 +33,8 @@ pub const MAC_LEN: usize = 6;
 pub const IPV4_LEN: usize = 4;
 pub const IPV6_LEN: usize = 16;
 pub const ARP_REQUEST: u16 = 1;
-pub const IP_PROTO: u16 = 0x0800;
+pub const IPV4_PROTO: u16 = 0x0800;
+pub const IPV6_PROTO: u16 = 0x86dd;
 pub const ARP_PROTO: u16 = 0x0806;
 pub const ICMP_PROTO: u16 = 0x0001;
 pub const ICMP_ECHO_REQUEST: u8 = 8;
@@ -41,45 +43,7 @@ pub const EMPTY_ARRAY: [i8; 1] = [0];
 pub const IPV4_HEADER_SIZE: usize = std::mem::size_of::<IpV4Header>();
 pub const ARP_HEADER_SIZE: usize = std::mem::size_of::<ArpHeader>();
 pub const ETH_HEADER_SIZE: usize = std::mem::size_of::<EthHeader>();
-pub const ICMPV4_HEADER_SIZE: usize = std::mem::size_of::<IcmpV4Header>();
-
-/// trait for binary operations should be implemented on integers
-/// # Examples
-/// ```
-/// use cursock::utils::*;
-/// struct Integer {
-///     pub integer: u32
-/// }
-///
-/// impl BinOpers for Integer {
-///     fn get_bit(&self, index: usize) -> Bit {
-///         Handle::from((self.integer.clone() >> index & 1) as u8)
-///     }
-///     fn set_bit(&self, value: Bit, index: usize) -> Self {
-///         let integer: u32 = match value {
-///             Bit::One => {
-///                 let mask: u32 = 1;
-///                 self.integer.clone() | (mask << index)
-///             },
-///             Bit::Zero => {
-///                 let mask: u32 = 1;
-///                 self.integer.clone() & !(mask << index)
-///             },
-///         };
-///
-///         Integer { integer }
-///     }
-/// }
-///
-/// let mut a = Integer { integer: 0b01 };
-/// let bit: u8 = a.get_bit(0).to();
-/// assert_eq!(bit, 1);
-/// assert_eq!(a.set_bit(Bit::One, 1).integer, 0b11);
-/// ```
-pub trait BinOpers {
-    fn get_bit(&self, index: usize) -> Bit;
-    fn set_bit(&self, value: Bit, index: usize) -> Self;
-}
+pub const ICMP_HEADER_SIZE: usize = std::mem::size_of::<IcmpHeader>();
 
 /// struct for representing mac addresses
 ///
@@ -99,9 +63,9 @@ pub struct Mac {
 }
 
 /// enum with ip versions
-pub enum IpVer {
+pub enum IpV {
     V4,
-    V6
+    V6,
 }
 
 /// arp header
@@ -120,7 +84,7 @@ pub struct ArpHeader {
 
 /// icmp header
 #[repr(C)]
-pub struct IcmpV4Header {
+pub struct IcmpHeader {
     pub type_: u8,
     pub code: u8,
     pub check: u16,
@@ -151,22 +115,6 @@ pub struct IpV4Header {
     pub daddr: [u8; IPV4_LEN],
 }
 
-/// wrapper around type's pointer simple to box or arc smart pointer
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let a = 1;
-///
-/// let a_wrapper = Wrapper::new(&a);
-///
-/// assert_eq!(*a_wrapper.reference(), a)
-/// ```
-pub struct Wrapper<T: ?Sized> {
-    pointer: *const T,
-}
-
 /// arp header wrapper with fields that contains only addresses
 ///
 /// # Example
@@ -193,39 +141,39 @@ pub struct ArpResponse {
 }
 
 /// an ip header wrapper without useless fields
-/// 
-/// 
+///
+///
 pub struct IpData {
     total_len: u16,
     ttl: u8,
     src: net::IpAddr,
-    dst: net::IpAddr
+    dst: net::IpAddr,
 }
 
 /// an icmp header wrapper without useless fields
-/// 
-/// 
+///
+///
 pub struct IcmpData {
     type_: IcmpType,
     code: u8,
     id: u16,
     sq: u16,
     checksum: u16,
-    data: Vec<u8>
+    data: Vec<u8>,
 }
 
 /// an icmp types enum
-/// 
+///
 /// # Example
 /// ```
 /// use cursock::utils::*;
-/// 
+///
 /// let echo_reply = IcmpType::EchoReply;
 /// let raw_echo_reply: u8 = echo_reply.to();
-/// 
+///
 /// assert_eq!(raw_echo_reply, 0)
 /// ```
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum IcmpType {
     SKIP,
     Reserved,
@@ -240,7 +188,7 @@ pub enum IcmpType {
     SourceQuench,
     TimeExceeded,
     TimestampReply,
-	IPv6WhereAreYou,
+    IPv6WhereAreYou,
     DomainNameReply,
     TimestampRequest,
     ParameterProblem,
@@ -259,25 +207,6 @@ pub enum IcmpType {
     MobileRegistrationRequest,
 }
 
-/// bit representation
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let bit = Bit::Zero;
-///
-/// let boolean_bit: bool = bit.to();
-/// let decimal_bit: u8 = bit.to();
-///
-/// assert_eq!(boolean_bit, false);
-/// assert_eq!(decimal_bit, 0)
-/// ```
-#[derive(Clone)]
-pub enum Bit {
-    One,
-    Zero,
-}
 
 impl From<u8> for IcmpType {
     fn from(value: u8) -> Self {
@@ -311,72 +240,74 @@ impl From<u8> for IcmpType {
             39 => Self::SKIP,
             40 => Self::Photuris,
             41 => Self::Experimental,
-            _ => Self::Unassigned
+            _ => Self::Unassigned,
         }
     }
 }
 
-impl Into<u8> for IcmpType {
-    fn into(self) -> u8 {
-        match self {
-            IcmpType::SKIP => 39,
-            IcmpType::Reserved => 19,
-            IcmpType::Redirect => 5,
-            IcmpType::Photuris => 40,
-            IcmpType::EchoReply => 0,
-            IcmpType::Unassigned => 2,
-            IcmpType::Traceroute => 30,
-            IcmpType::IPv6IAmHere => 34,
-            IcmpType::EchoRequest => 8,
-            IcmpType::Experimental => 41,
-            IcmpType::SourceQuench => 4,
-            IcmpType::TimeExceeded => 11,
-            IcmpType::TimestampReply => 14,
-            IcmpType::IPv6WhereAreYou => 33,
-            IcmpType::DomainNameReply => 38,
-            IcmpType::TimestampRequest => 13,
-            IcmpType::ParameterProblem => 12,
-            IcmpType::AddressMaskReply => 18,
-            IcmpType::InformationReply => 16,
-            IcmpType::DomainNameRequest => 37,
-            IcmpType::InformationRequest => 15,
-            IcmpType::AddressMaskRequest => 17,
-            IcmpType::RouterSolicitation => 10,
-            IcmpType::MobileHostRedirect => 32,
-            IcmpType::RouterAdvertisement => 9,
-            IcmpType::AlternateHostAddress => 6,
-            IcmpType::DestenationUnreachable => 3,
-            IcmpType::DatagramConversionError => 31,
-            IcmpType::MobileRegistrationReply => 36,
-            IcmpType::MobileRegistrationRequest => 35,
+impl From<IcmpType> for u8 {
+    fn from(value: IcmpType) -> Self {
+        match value {
+          IcmpType::SKIP => 39,
+          IcmpType::Reserved => 19,
+          IcmpType::Redirect => 5,
+          IcmpType::Photuris => 40,
+          IcmpType::EchoReply => 0,
+          IcmpType::Unassigned => 2,
+          IcmpType::Traceroute => 30,
+          IcmpType::IPv6IAmHere => 34,
+          IcmpType::EchoRequest => 8,
+          IcmpType::Experimental => 41,
+          IcmpType::SourceQuench => 4,
+          IcmpType::TimeExceeded => 11,
+          IcmpType::TimestampReply => 14,
+          IcmpType::IPv6WhereAreYou => 33,
+          IcmpType::DomainNameReply => 38,
+          IcmpType::TimestampRequest => 13,
+          IcmpType::ParameterProblem => 12,
+          IcmpType::AddressMaskReply => 18,
+          IcmpType::InformationReply => 16,
+          IcmpType::DomainNameRequest => 37,
+          IcmpType::InformationRequest => 15,
+          IcmpType::AddressMaskRequest => 17,
+          IcmpType::RouterSolicitation => 10,
+          IcmpType::MobileHostRedirect => 32,
+          IcmpType::RouterAdvertisement => 9,
+          IcmpType::AlternateHostAddress => 6,
+          IcmpType::DestenationUnreachable => 3,
+          IcmpType::DatagramConversionError => 31,
+          IcmpType::MobileRegistrationReply => 36,
+          IcmpType::MobileRegistrationRequest => 35,
         }
     }
 }
 
-impl PartialEq for IcmpType {
-    fn eq(&self, other: &Self) -> bool {
-        let byte: u8 = self.clone().into();
-        byte == other.clone().into()
-    }
-}
-
-impl IpVer {
-    pub fn prefered(&self, v4: Option<net::Ipv4Addr>, v6: Option<net::Ipv6Addr>) -> Option<net::IpAddr> {
+impl IpV {
+    pub fn prefered(
+        &self,
+        v4: Option<net::Ipv4Addr>,
+        v6: Option<net::Ipv6Addr>,
+    ) -> Option<net::IpAddr> {
         match (self, v4, v6) {
-            (IpVer::V4, None, Some(v6)) => Some(net::IpAddr::V6(v6)),
-            (IpVer::V4, Some(v4), _) => Some(net::IpAddr::V4(v4)),
-            (IpVer::V6, _, Some(v6)) => Some(net::IpAddr::V6(v6)),
-            (IpVer::V6, Some(v4), None) => Some(net::IpAddr::V4(v4)),
-            _ => None
+            (IpV::V4, None, Some(v6)) => Some(net::IpAddr::V6(v6)),
+            (IpV::V4, Some(v4), _) => Some(net::IpAddr::V4(v4)),
+            (IpV::V6, _, Some(v6)) => Some(net::IpAddr::V6(v6)),
+            (IpV::V6, Some(v4), None) => Some(net::IpAddr::V4(v4)),
+            _ => None,
         }
     }
 }
 
 impl IpData {
     pub fn new(total_len: u16, ttl: u8, src: net::IpAddr, dst: net::IpAddr) -> Self {
-        Self { total_len, ttl, src, dst }
+        Self {
+            total_len,
+            ttl,
+            src,
+            dst,
+        }
     }
-    
+
     getters!(
         pub get_total_len(total_len) -> u16;
         pub get_ttl(ttl) -> u8;
@@ -393,7 +324,14 @@ impl IpData {
 
 impl IcmpData {
     pub fn new(type_: IcmpType, code: u8, checksum: u16, id: u16, sq: u16, data: Vec<u8>) -> Self {
-        Self { type_, code, checksum, id, sq, data }
+        Self {
+            type_,
+            code,
+            checksum,
+            id,
+            sq,
+            data,
+        }
     }
 
     getters!(
@@ -415,71 +353,15 @@ impl IcmpData {
     );
 }
 
-impl From<bool> for Bit {
-    fn from(value: bool) -> Self {
-        match value {
-            true => Self::One,
-            false => Self::Zero,
-        }
-    }
-}
-
-impl Into<bool> for Bit {
-    fn into(self) -> bool {
-        match self {
-            Self::One => true,
-            Self::Zero => false,
-        }
-    }
-}
-
-impl From<u8> for Bit {
-    fn from(value: u8) -> Self {
-        match value {
-            1 => Self::One,
-            0 => Self::Zero,
-            _ => {
-                println!(
-                    "Can\'t convert {} as bit, \"Zero\" will be used as default",
-                    value
-                );
-                Self::Zero
-            }
-        }
-    }
-}
-
-impl Into<u8> for Bit {
-    fn into(self) -> u8 {
-        match self {
-            Self::One => 1,
-            Self::Zero => 0,
-        }
-    }
-}
-
 impl From<[u8; MAC_LEN]> for Mac {
     fn from(mac_addr: [u8; MAC_LEN]) -> Self {
         Self { mac_addr }
     }
 }
 
-impl Into<[u8; MAC_LEN]> for Mac {
-    fn into(self) -> [u8; MAC_LEN] {
-        self.mac_addr
-    }
-}
-
-
-impl<T: ?Sized> Wrapper<T> {
-    pub fn new(pointer: *const T) -> Self {
-        Self { pointer }
-    }
-    pub fn reference(&self) -> &T {
-        unsafe { &*self.pointer }
-    }
-    pub fn mut_reference(&self) -> &mut T {
-        unsafe { &mut *(self.pointer as *mut T) }
+impl From<Mac> for [u8; MAC_LEN] {
+    fn from(value: Mac) -> Self {
+        value.mac_addr
     }
 }
 
@@ -495,24 +377,6 @@ impl std::fmt::Display for Mac {
             self.mac_addr[4],
             self.mac_addr[5]
         )
-    }
-}
-
-impl BinOpers for u32 {
-    fn get_bit(&self, index: usize) -> Bit {
-        Bit::from((self.clone() >> index & 1) as u8)
-    }
-    fn set_bit(&self, value: Bit, index: usize) -> Self {
-        match value {
-            Bit::One => {
-                let mask: Self = 1;
-                self.clone() | (mask << index)
-            }
-            Bit::Zero => {
-                let mask: Self = 1;
-                self.clone() & !(mask << index)
-            }
-        }
     }
 }
 
@@ -540,31 +404,6 @@ impl ArpResponse {
     );
 }
 
-/// function for building to the exponent
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let a = 3;
-/// let b = power(a as f64, 2); // 1*3*3
-///
-/// assert_eq!(b, 9f64)
-/// ```
-pub fn power(f: f64, power: u16) -> f64 {
-    power_with_start(1f64, f, power)
-}
-
-fn power_with_start(start: f64, f: f64, power: u16) -> f64 {
-    let mut out: f64 = start;
-
-    for _ in 0..power {
-        out *= f
-    }
-
-    out
-}
-
 /// c memcpy clone
 ///
 /// # Example
@@ -585,7 +424,7 @@ fn power_with_start(start: f64, f: f64, power: u16) -> f64 {
 /// ```
 pub fn memcpy<TD, TS>(dest: *mut TD, src: *const TS, size: usize) -> *mut TD {
     if dest as usize == 0 {
-        return 0 as *mut TD;
+        return ptr::null_mut();
     }
 
     let byte_dest: *mut u8 = dest as *mut u8;
@@ -598,23 +437,6 @@ pub fn memcpy<TD, TS>(dest: *mut TD, src: *const TS, size: usize) -> *mut TD {
     }
 
     dest
-}
-
-/// creates string from bytes
-///
-/// # Example
-/// ```
-/// use cursock::utils::*;
-///
-/// let bytes = b"Hello, world";
-///
-/// assert_eq!(str_from_bytes(bytes).as_bytes(), bytes)
-/// ```
-pub fn str_from_bytes(bytes: &[u8]) -> String {
-    bytes
-        .into_iter()
-        .map(|u| u.clone() as char)
-        .collect()
 }
 
 /// creates string from char pointer
@@ -645,4 +467,27 @@ pub fn str_from_cstr(cstr: *const i8) -> String {
     }
 
     string
+}
+
+pub fn checksum(header: *const u8, len: usize) -> u16 {
+    let mut sum: i32 = 0;
+    let mut left: usize = len;
+    let words: *const u16 = header as *const u16;
+
+    let mut i: usize = 0;
+    while left > 1 {
+        sum += unsafe { *((words as usize + i) as *const u16) } as i32;
+
+        left -= 2;
+        i += 2
+    }
+
+    if left == 1 {
+        sum += unsafe { *((words as usize + i - 1) as *const u8) } as i32;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += sum >> 16;
+
+    (!sum) as u16
 }

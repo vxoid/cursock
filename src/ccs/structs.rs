@@ -40,7 +40,7 @@ pub union in6_addr {
     pub s6_addr: [u8; 16],
     pub s6_addr16: [u16; 8],
     pub s6_addr32: [u32; 4],
-    pub s6_addr128: u128
+    pub s6_addr128: u128,
 }
 
 #[cfg(target_os = "linux")]

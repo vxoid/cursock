@@ -29,6 +29,25 @@ pub struct IP_ADAPTER_ADDRESSES {
     pub ipv6_if_index: u32,
     pub zone_indices: [u32; 16],
     pub first_prefix: *mut IP_ADAPTER_PREFIX,
+    pub transmit_link_speed: u64,
+    pub receive_link_speed: u64,
+    pub first_wins_server_address: *mut IP_ADAPTER_WINS_SERVER_ADDRESS,
+    pub first_gateway_address: *mut IP_ADAPTER_GATEWAY_ADDRESS,
+}
+
+#[repr(C)]
+pub struct IP_ADAPTER_GATEWAY_ADDRESS {
+    pub length: u32,
+    pub reserved: u32,
+    pub next: *mut IP_ADAPTER_GATEWAY_ADDRESS,
+    pub address: SOCKET_ADDRESS,
+}
+
+#[repr(C)]
+pub struct IP_ADAPTER_WINS_SERVER_ADDRESS {
+    pub align: u64,
+    pub next: *mut IP_ADAPTER_WINS_SERVER_ADDRESS,
+    pub address: SOCKET_ADDRESS,
 }
 
 #[repr(C)]

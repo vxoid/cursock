@@ -6,7 +6,7 @@ fn main() {
 
     match &target_os[..] {
         "linux" => {
-            const LIBNAME: &'static str = "cursock";
+            const LIBNAME: &str = "cursock";
             const LIB: &[u8] = include_bytes!("lib/cursock/linux/libcursock.a");
 
             let lib_path: String = format!("{}/lib{}.a", out_dir, LIBNAME);
@@ -19,14 +19,14 @@ fn main() {
         "windows" => {
             println!("cargo:rustc-link-lib=iphlpapi:iphlpapi");
 
-            const LIBNAME: &'static str = "wpcap";
+            const LIBNAME: &str = "wpcap";
             const LIB: &[u8] = include_bytes!("lib/npcap/wpcap.lib");
 
             let lib_path: String = match &target_abi[..] {
                 "gnu" => format!("{}/lib{}.a", out_dir, LIBNAME),
-                _ => format!("{}/{}.lib", out_dir, LIBNAME)
+                _ => format!("{}/{}.lib", out_dir, LIBNAME),
             };
-            
+
             std::fs::write(&lib_path[..], LIB).expect("Can\'t write lib");
 
             println!("cargo:rustc-link-search={}", out_dir);

@@ -1,14 +1,14 @@
 mod consts;
-mod structs;
 #[cfg(target_os = "windows")]
 mod iphlpapi;
+mod structs;
 
 use std::os::raw::c_void;
 
 pub use consts::*;
-pub use structs::*;
 #[cfg(target_os = "windows")]
 pub use iphlpapi::*;
+pub use structs::*;
 
 #[cfg(target_os = "linux")]
 pub type SocklenT = u32;

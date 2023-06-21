@@ -1,4 +1,3 @@
-use std::net;
 use std::io;
 
 #[cfg(any(target_os = "windows",))]
@@ -12,7 +11,7 @@ use crate::*;
 /// ```
 /// use cursock::*;
 /// use cursock::utils::*;
-/// 
+///
 /// #[cfg(target_os = "linux")]
 /// let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error"); // Linux
 /// #[cfg(target_os = "windows")]
@@ -29,7 +28,7 @@ pub struct Socket {
     socket: i32,
     #[cfg(target_os = "windows")]
     adapter: usize,
-    interface: Adapter
+    interface: Adapter,
 }
 
 impl Socket {
@@ -39,26 +38,25 @@ impl Socket {
     /// ```
     /// use cursock::*;
     /// use cursock::utils::*;
-    /// 
+    ///
     /// #[cfg(target_os = "linux")]
-    /// let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error"); // Linux
+    /// let socket = Socket::new("wlan0").expect("initialize error"); // Linux
     /// #[cfg(target_os = "windows")]
-    /// let socket = Socket::new("10", IpVer::V6).expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
+    /// let socket = Socket::new("10").expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
     /// ```
-    pub fn new(interface: &str, prefered_addr: IpVer) -> io::Result<Self> {
+    pub fn new(interface: &str) -> io::Result<Self> {
         #[cfg(target_os = "linux")]
         {
-            Self::new_linux(interface, prefered_addr)
+            Self::new_linux(interface)
         }
         #[cfg(target_os = "windows")]
         {
-            Self::new_windows(interface, prefered_addr)
+            Self::new_windows(interface)
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         {
             let _ = interface;
-            let _ = prefered_addr;
             Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("{} is not supported yet!", std::env::consts::OS),
@@ -71,8 +69,8 @@ impl Socket {
     /// ```
     /// use cursock::*;
     /// use cursock::utils::*;
-    /// 
-    /// let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error");
+    ///
+    /// let socket = Socket::new("wlan0").expect("initialize error");
     /// let buffer = [0; 100];
     /// socket.send_raw_packet(&buffer).expect("send error")
     /// ```
@@ -101,8 +99,8 @@ impl Socket {
     /// ```
     /// use cursock::*;
     /// use cursock::utils::*;
-    /// 
-    /// let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error");
+    ///
+    /// let socket = Socket::new("wlan0").expect("initialize error");
     /// let mut buffer = [0; 1000];
     /// socket.read_raw_packet(&mut buffer).expect("read error")
     /// ```
@@ -125,10 +123,7 @@ impl Socket {
             ))
         }
     }
-    
-    pub fn get_src_ip(&self) -> &net::IpAddr {
-        self.interface.get_ip()
-    }
+
     pub fn get_src_mac(&self) -> &Mac {
         self.interface.get_mac()
     }
@@ -140,7 +135,9 @@ impl Socket {
     ///
     /// # Examples
     /// ```
-    /// let socket = cursock::Socket::new("wlan0", true).expect("initialize error");
+    /// use cursock::*;
+    ///
+    /// let socket = Socket::new("wlan0").expect("initialize error");
     /// socket.destroy()
     /// ```
     pub fn destroy(&self) {
@@ -150,12 +147,12 @@ impl Socket {
         }
     }
     #[cfg(target_os = "linux")]
-    fn new_linux(interface: &str, prefered_addr: IpVer) -> io::Result<Self> {
+    fn new_linux(interface: &str) -> io::Result<Self> {
         let socket: i32 = unsafe {
             ccs::socket(
                 ccs::AF_PACKET,
                 ccs::SOCK_RAW,
-                ccs::htons(ccs::ETH_P_ALL as u16) as i32,
+                (ccs::ETH_P_ALL as u16).to_be() as i32,
             )
         };
 
@@ -163,29 +160,25 @@ impl Socket {
             return Err(io::Error::last_os_error());
         }
 
-        let adapter = Adapter::get_by_ifname(interface, prefered_addr)?;
+        let adapter = Adapter::get_by_ifname(interface)?;
 
         Ok(Self {
             socket,
-            interface: adapter
+            interface: adapter,
         })
     }
     #[cfg(target_os = "windows")]
-    fn new_windows(interface: &str, prefered_addr: IpVer) -> io::Result<Self> {
-        let id = interface.parse::<u32>().map_err(|err| io::Error::new(
-            io::ErrorKind::InvalidInput,
-            err.to_string()
-        ))?;
+    fn new_windows(interface: &str) -> io::Result<Self> {
+        let id = interface
+            .parse::<u32>()
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))?;
 
-        let interface = Adapter::get_by_id(id, prefered_addr)?;
-        
+        let interface = Adapter::get_by_id(id)?;
+
         let guid = interface.get_guid();
         let pcap_interface: String = format!("rpcap://\\Device\\NPF_{}", guid);
         let pcap_interface: CString = CString::new(pcap_interface.clone())
-            .map_err(|err| io::Error::new(
-                io::ErrorKind::InvalidInput,
-                err.to_string()
-            ))?;
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))?;
 
         let mut error_buffer: [i8; 256] = [0; 256];
 
@@ -212,14 +205,11 @@ impl Socket {
 
         Ok(Self {
             adapter: adapter as usize,
-            interface
+            interface,
         })
     }
     #[cfg(target_os = "linux")]
-    fn read_raw_packet_linux(
-        &self,
-        buffer: &mut [u8]
-    ) -> io::Result<()> {
+    fn read_raw_packet_linux(&self, buffer: &mut [u8]) -> io::Result<()> {
         let length: isize = unsafe {
             ccs::recvfrom(
                 self.socket,
@@ -238,10 +228,7 @@ impl Socket {
         Ok(())
     }
     #[cfg(target_os = "windows")]
-    fn read_raw_packet_windows(
-        &self,
-        buffer: &mut [u8],
-    ) -> io::Result<()> {
+    fn read_raw_packet_windows(&self, buffer: &mut [u8]) -> io::Result<()> {
         let mut header: *mut ccs::pcap_pkthdr = std::ptr::null_mut();
         let mut pkt_data: *const u8 = std::ptr::null();
 
@@ -250,7 +237,7 @@ impl Socket {
         };
 
         if result == 0 {
-            return self.read_raw_packet_windows(buffer)
+            return self.read_raw_packet_windows(buffer);
         } else if result != 1 {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
@@ -281,7 +268,8 @@ impl Socket {
         };
 
         if length < 0 {
-            let error: String = unsafe { str_from_cstr(ccs::pcap_geterr(self.adapter as *mut ccs::pcap)) };
+            let error: String =
+                unsafe { str_from_cstr(ccs::pcap_geterr(self.adapter as *mut ccs::pcap)) };
 
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
@@ -335,14 +323,22 @@ impl Socket {
 impl Clone for Socket {
     #[cfg(target_os = "windows")]
     fn clone(&self) -> Self {
-        Self { adapter: self.adapter.clone(), interface: self.interface.clone() }
+        Self {
+            adapter: self.adapter.clone(),
+            interface: self.interface.clone(),
+        }
     }
     #[cfg(target_os = "linux")]
     fn clone(&self) -> Self {
-        Self { socket: self.socket.clone(), interface: self.interface.clone() }
+        Self {
+            socket: self.socket.clone(),
+            interface: self.interface.clone(),
+        }
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     fn clone(&self) -> Self {
-        Self { interface: self.interface.clone() }
+        Self {
+            interface: self.interface.clone(),
+        }
     }
 }

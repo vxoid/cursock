@@ -11,58 +11,62 @@ pub struct Adapter {
     #[cfg(target_os = "linux")]
     index: i32,
     name: String,
-    ip: net::IpAddr,
-    mac: Mac
+    ipv4: Option<net::Ipv4Addr>,
+    ipv6: Option<net::Ipv6Addr>,
+    gateway: Option<net::Ipv4Addr>,
+    mac: Mac,
 }
 
 impl Adapter {
     /// initializes struct using interface id
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let interface = Adapter::get_by_id(10, IpVer::V4).expect("error finding adapter");
     /// ```
     #[cfg(target_os = "windows")]
-    pub fn get_by_id(id: u32, ver: IpVer) -> io::Result<Self> {
-        let (ipv4, ipv6, mac, guid, name) = get_interface_info(id)?;
+    pub fn get_by_id(id: u32) -> io::Result<Self> {
+        let (ipv4, ipv6, gateway, mac, guid, name) = get_interface_info(id)?;
 
-        let result = ver.prefered(ipv4, ipv6)
-            .map_or(Err(io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                format!("{} has no either v4 or v6 addresses", name)
-            )), |ip| Ok(Self { name, ip, mac, guid }));
-
-        result
+        Ok(Self {
+            name,
+            ipv4,
+            ipv6,
+            gateway,
+            mac,
+            guid,
+        })
     }
 
     /// initializes struct using interface name
-    /// 
+    ///
     /// # Examples
     /// ```
     /// let adapter = Adapter::get_by_ifname("wlan0", IpVer::V4).expect("error finding adapter");
-    /// 
+    ///
     /// ```
     #[cfg(target_os = "linux")]
-    pub fn get_by_ifname(if_name: &str, ver: IpVer) -> io::Result<Self> {
+    pub fn get_by_ifname(if_name: &str) -> io::Result<Self> {
         let cstr_if_name = CString::new(if_name)
-            .map_err(|err| io::Error::new(
-                io::ErrorKind::InvalidInput,
-                err.to_string()
-            ))?;
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))?;
 
         let (index, ipv4, ipv6, mac) = get_interface_info(cstr_if_name)?;
+        let gateway = get_file_default_gateway();
 
-        let result = ver.prefered(ipv4, ipv6)
-            .map_or(Err(io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                format!("{} has no either v4 or v6 addresses", if_name)
-            )), |ip| Ok(Self { name: if_name.to_string(), ip, mac, index }));
-
-        result
+        Ok(Self {
+            index,
+            name: if_name.to_string(),
+            ipv4,
+            ipv6,
+            gateway,
+            mac,
+        })
     }
 
     getters!(
-        pub get_ip(ip) -> net::IpAddr;
+        pub get_ipv4(ipv4) -> Option<net::Ipv4Addr>;
+        pub get_ipv6(ipv6) -> Option<net::Ipv6Addr>;
+        pub get_gateway(gateway) -> Option<net::Ipv4Addr>;
         pub get_mac(mac) -> Mac;
         pub get_name(name) -> str;
     );
@@ -80,34 +84,60 @@ impl Adapter {
 
 impl ToString for Adapter {
     fn to_string(&self) -> String {
-        format!("{} ({} - {})", self.name, self.mac, self.ip)
+        let ip = self
+            .ipv4
+            .map(net::IpAddr::V4)
+            .or_else(|| self.ipv6.map(net::IpAddr::V6));
+
+        format!(
+            "{} ({} - {:?} - {:?})",
+            self.name, self.mac, ip, self.gateway
+        )
     }
 }
 
 impl Clone for Adapter {
     #[cfg(target_os = "windows")]
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), ip: self.ip.clone(), mac: self.mac.clone(), guid: self.guid.clone() }
+        Self {
+            name: self.name.clone(),
+            ipv4: self.ipv4.clone(),
+            ipv6: self.ipv6.clone(),
+            gateway: self.gateway.clone(),
+            mac: self.mac.clone(),
+            guid: self.guid.clone(),
+        }
     }
 
     #[cfg(target_os = "linux")]
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), ip: self.ip.clone(), mac: self.mac.clone(), index: self.index.clone() }
+        Self {
+            name: self.name.clone(),
+            ipv4: self.ipv4.clone(),
+            ipv6: self.ipv6.clone(),
+            gateway: self.gateway.clone(),
+            mac: self.mac.clone(),
+            index: self.index.clone(),
+        }
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     fn clone(&self) -> Self {
-        Self { name: self.name.clone(), ip: self.ip.clone(), mac: self.mac.clone() }
+        Self {
+            name: self.name.clone(),
+            ipv4: self.ipv4.clone(),
+            ipv6: self.ipv6.clone(),
+            gateway: self.gateway.clone(),
+            mac: self.mac.clone(),
+        }
     }
 }
 
 #[cfg(target_os = "linux")]
 fn get_interface_info(
-    if_name: CString
+    if_name: CString,
 ) -> io::Result<(i32, Option<net::Ipv4Addr>, Option<net::Ipv6Addr>, Mac)> {
-    let socketv4 = unsafe {
-        ccs::socket(ccs::AF_INET, ccs::SOCK_DGRAM, 0)
-    };
+    let socketv4 = unsafe { ccs::socket(ccs::AF_INET, ccs::SOCK_DGRAM, 0) };
     if socketv4 < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -126,18 +156,14 @@ fn get_interface_info(
 
     let ifindex: i32 = get_if_index(socketv4, &mut if_request)?;
 
-    let ipv4 = get_if_ipv4(socketv4, &mut if_request)
-        .map_or(None, |ipv4| Some(ipv4));
+    let ipv4 = get_if_ipv4(socketv4, &mut if_request).map_or(None, |ipv4| Some(ipv4));
 
-    let socketv6 = unsafe {
-        ccs::socket(ccs::AF_INET6, ccs::SOCK_DGRAM, 0)
-    };
+    let socketv6 = unsafe { ccs::socket(ccs::AF_INET6, ccs::SOCK_DGRAM, 0) };
     if socketv6 < 0 {
         return Err(io::Error::last_os_error());
     }
 
-    let ipv6 = get_if_ipv6(socketv6, &mut if_request)
-        .map_or(None, |ipv6| Some(ipv6));
+    let ipv6 = get_if_ipv6(socketv6, &mut if_request).map_or(None, |ipv6| Some(ipv6));
 
     let mac: Mac = get_if_mac(socketv4, &mut if_request)?;
 
@@ -158,6 +184,8 @@ fn get_if_index(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<i32> {
 
 #[cfg(target_os = "linux")]
 fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
+    use std::mem;
+
     let err: i32;
 
     err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
@@ -168,15 +196,10 @@ fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
 
     let addr: *const ccs::sockaddr_in =
         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
-    let mut ip: [u8; IPV4_LEN] = [0; IPV4_LEN];
 
-    memcpy(
-        ip.as_mut_ptr(),
-        unsafe { &(*addr).sin_addr.s_addr },
-        std::mem::size_of::<[u8; IPV4_LEN]>(),
-    );
-
-    Ok(net::Ipv4Addr::from(ip))
+    Ok(net::Ipv4Addr::from(unsafe {
+        mem::transmute::<_, [u8; IPV4_LEN]>((*addr).sin_addr.s_addr)
+    }))
 }
 
 #[cfg(target_os = "linux")]
@@ -189,17 +212,13 @@ fn get_if_ipv6(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv6Addr> {
         return Err(io::Error::last_os_error());
     }
 
-    let addr =
-        unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in6;
-    let mut ip: [u8; IPV6_LEN] = [0; IPV6_LEN];
+    let addr = unsafe {
+        (*(&(*ifr).ifr_ifru.ifru_addr as *const _ as *const ccs::sockaddr_in6))
+            .sin6_addr
+            .s6_addr
+    };
 
-    memcpy(
-        ip.as_mut_ptr(),
-        unsafe { &(*addr).sin6_addr },
-        IPV6_LEN,
-    );
-
-    Ok(net::Ipv6Addr::from(ip))
+    Ok(net::Ipv6Addr::from(addr))
 }
 
 #[cfg(target_os = "linux")]
@@ -217,20 +236,63 @@ fn get_if_mac(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<Mac> {
     memcpy(
         mac.as_mut_ptr(),
         sa_data.as_ptr(),
-        std::mem::size_of::<[u8; MAC_LEN]>(),
+        MAC_LEN,
     );
 
     Ok(Mac::from(mac))
 }
 
+#[cfg(target_os = "linux")]
+fn get_file_default_gateway() -> Option<net::Ipv4Addr> {
+    use std::mem;
+    use std::{fs, io::BufRead};
+
+    let file = fs::File::open("/proc/net/route").ok()?;
+    let reader = io::BufReader::new(file);
+
+    for line in reader.lines() {
+        if let Ok(line) = line {
+            let mut fields = line.split('\t');
+            let interface = fields.next();
+            let destination = fields.next();
+            let gateway = fields.next();
+
+            if let (Some(_), Some(destination), Some(gateway)) = (interface, destination, gateway) {
+                if destination == "00000000" {
+                    let gateway_ip = u32::from_str_radix(gateway, 16).ok()?;
+
+                    return Some(net::Ipv4Addr::from(net::Ipv4Addr::from(unsafe {
+                        mem::transmute::<_, [u8; IPV4_LEN]>(gateway_ip)
+                    })));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[cfg(target_os = "windows")]
-fn get_interface_info(if_id: u32) -> io::Result<(Option<net::Ipv4Addr>, Option<net::Ipv6Addr>, Mac, String, String)> {
+fn get_interface_info(
+    if_id: u32,
+) -> io::Result<(
+    Option<net::Ipv4Addr>,
+    Option<net::Ipv6Addr>,
+    Option<net::Ipv4Addr>,
+    Mac,
+    String,
+    String,
+)> {
+    use crate::ccs::AF_INET;
+    use std::mem;
+
     let mut out_buf_len: u32 = 0;
+    let flags = ccs::GAA_FLAG_INCLUDE_GATEWAYS;
 
     unsafe {
         ccs::GetAdaptersAddresses(
-            0,
-            ccs::GAA_FLAG_INCLUDE_PREFIX as u32,
+            ccs::AF_UNSPEC as u32,
+            flags as u32,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             &mut out_buf_len,
@@ -244,7 +306,7 @@ fn get_interface_info(if_id: u32) -> io::Result<(Option<net::Ipv4Addr>, Option<n
     let result = unsafe {
         ccs::GetAdaptersAddresses(
             ccs::AF_UNSPEC as u32,
-            ccs::GAA_FLAG_INCLUDE_PREFIX as u32,
+            flags as u32,
             std::ptr::null_mut(),
             addresses,
             &mut out_buf_len,
@@ -262,80 +324,92 @@ fn get_interface_info(if_id: u32) -> io::Result<(Option<net::Ipv4Addr>, Option<n
 
     let mut cur_addr = addresses;
     while !cur_addr.is_null() {
-        let cur_addr_r = unsafe {
-            &mut *cur_addr
-        };
+        let cur_addr_r = unsafe { &mut *cur_addr };
 
         if cur_addr_r.if_index == if_id {
-            let mut unicast_addr = cur_addr_r.first_unicast_address;
-
             let mut ipv4 = None;
             let mut ipv6 = None;
+            let mut gateway_ip = None;
             let mut mac = [0; MAC_LEN];
-            memcpy(mac.as_mut_ptr(), cur_addr_r.physical_address.as_ptr(), MAC_LEN);
+            memcpy(
+                mac.as_mut_ptr(),
+                cur_addr_r.physical_address.as_ptr(),
+                MAC_LEN,
+            );
 
             let mac = Mac::from(mac);
-            
+
             let guid = str_from_cstr(cur_addr_r.adapter_name as *const i8);
-            let slice = unsafe { std::slice::from_raw_parts(cur_addr_r.friendly_name, {
-                let mut len = 0;
-                while *cur_addr_r.friendly_name.add(len) != 0 {
-                    len += 1;
-                }
-                len
-            }) };
+            let slice = unsafe {
+                std::slice::from_raw_parts(cur_addr_r.friendly_name, {
+                    let mut len = 0;
+                    while *cur_addr_r.friendly_name.add(len) != 0 {
+                        len += 1;
+                    }
+                    len
+                })
+            };
             let name = slice
                 .into_iter()
                 .map(|u| std::char::from_u32(*u as u32).unwrap())
                 .collect::<String>();
 
-            while !unicast_addr.is_null() {
-                let unicast_addr_r = unsafe {
-                    &mut *unicast_addr
-                };
+            let mut gateway = cur_addr_r.first_gateway_address;
+            while !gateway.is_null() {
+                let r_gateway = unsafe { &mut *gateway };
 
-                let sockaddr = unsafe {
-                    &*(unicast_addr_r.address.lp_sockaddr as *const ccs::sockaddr)
-                };
+                let sockaddr =
+                    unsafe { &*(r_gateway.address.lp_sockaddr as *const ccs::sockaddr_in) };
+
+                if sockaddr.sin_family == AF_INET as i16 {
+                    gateway_ip = Some(net::Ipv4Addr::from(unsafe {
+                        mem::transmute::<_, [u8; IPV4_LEN]>(sockaddr.sin_addr.s_addr)
+                    }));
+                    break;
+                }
+
+                gateway = r_gateway.next;
+            }
+
+            let mut unicast_addr = cur_addr_r.first_unicast_address;
+            while !unicast_addr.is_null() {
+                let unicast_addr_r = unsafe { &mut *unicast_addr };
+
+                let sockaddr =
+                    unsafe { &*(unicast_addr_r.address.lp_sockaddr as *const ccs::sockaddr) };
 
                 match sockaddr.sa_family as usize {
                     ccs::AF_INET => {
                         if let Some(_) = ipv4 {
                             unicast_addr = unicast_addr_r.next;
-                            continue
+                            continue;
                         }
 
                         let sockaddr = unsafe {
                             &*(unicast_addr_r.address.lp_sockaddr as *const ccs::sockaddr_in)
                         };
-                        let mut ip = [0u8; IPV4_LEN];
-                        
-                        memcpy(ip.as_mut_ptr(), &sockaddr.sin_addr, IPV4_LEN);
 
-                        ipv4 = Some(net::Ipv4Addr::from(ip))
-                    },
+                        ipv4 = Some(net::Ipv4Addr::from(unsafe { mem::transmute::<_, [u8; IPV4_LEN]>(sockaddr.sin_addr.s_addr) }))
+                    }
                     ccs::AF_INET6 => {
                         if let Some(_) = ipv6 {
                             unicast_addr = unicast_addr_r.next;
-                            continue
+                            continue;
                         }
 
                         let sockaddr = unsafe {
                             &*(unicast_addr_r.address.lp_sockaddr as *const ccs::sockaddr_in6)
                         };
-                        let mut ip = [0u8; IPV6_LEN];
-                        
-                        memcpy(ip.as_mut_ptr(), &sockaddr.sin6_addr, IPV6_LEN);
 
-                        ipv6 = Some(net::Ipv6Addr::from(ip))
-                    },
+                        ipv6 = Some(net::Ipv6Addr::from(unsafe { sockaddr.sin6_addr.s6_addr }))
+                    }
                     _ => {}
                 }
 
                 unicast_addr = unicast_addr_r.next
             }
 
-            output = Some((ipv4, ipv6, mac, guid, name))
+            output = Some((ipv4, ipv6, gateway_ip, mac, guid, name))
         }
 
         cur_addr = cur_addr_r.next
@@ -343,10 +417,12 @@ fn get_interface_info(if_id: u32) -> io::Result<(Option<net::Ipv4Addr>, Option<n
 
     let output = match output {
         Some(output) => output,
-        None => return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("there isn\'t any adapter with id {}", if_id)
-        )),
+        None => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("there isn\'t any adapter with id {}", if_id),
+            ))
+        }
     };
 
     Ok(output)
