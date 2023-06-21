@@ -13,9 +13,9 @@ use crate::*;
 /// use cursock::utils::*;
 ///
 /// #[cfg(target_os = "linux")]
-/// let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error"); // Linux
+/// let socket = Socket::new("wlan0").expect("initialize error"); // Linux
 /// #[cfg(target_os = "windows")]
-/// let socket = Socket::new("10", IpVer::V6).expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
+/// let socket = Socket::new("10").expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
 ///
 /// let buffer: [u8; 1024] = [0; 1024];
 ///
@@ -291,9 +291,7 @@ impl Socket {
             sll_halen: MAC_LEN as u8,
             sll_addr: [0; 8],
         };
-        for i in 0..MAC_LEN {
-            addr.sll_addr[i] = raw_src_mac[i]
-        }
+        addr.sll_addr[..MAC_LEN].copy_from_slice(&raw_src_mac);
 
         let addrlen: ccs::SocklenT = std::mem::size_of_val(&addr) as ccs::SocklenT;
 

@@ -156,14 +156,14 @@ fn get_interface_info(
 
     let ifindex: i32 = get_if_index(socketv4, &mut if_request)?;
 
-    let ipv4 = get_if_ipv4(socketv4, &mut if_request).map_or(None, Some);
+    let ipv4 = get_if_ipv4(socketv4, &mut if_request).ok();
 
     let socketv6 = unsafe { ccs::socket(ccs::AF_INET6, ccs::SOCK_DGRAM, 0) };
     if socketv6 < 0 {
         return Err(io::Error::last_os_error());
     }
 
-    let ipv6 = get_if_ipv6(socketv6, &mut if_request).map_or(None, Some);
+    let ipv6 = get_if_ipv6(socketv6, &mut if_request).ok();
 
     let mac: Mac = get_if_mac(socketv4, &mut if_request)?;
 
@@ -184,10 +184,6 @@ fn get_if_index(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<i32> {
 
 #[cfg(target_os = "linux")]
 fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
-    use std::mem;
-
-    
-
     let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
 
     if err == -1 {
@@ -197,15 +193,11 @@ fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
     let addr: *const ccs::sockaddr_in =
         unsafe { &(*ifr).ifr_ifru.ifru_addr as *const ccs::sockaddr } as *const ccs::sockaddr_in;
 
-    Ok(net::Ipv4Addr::from(unsafe {
-        mem::transmute::<_, [u8; IPV4_LEN]>((*addr).sin_addr.s_addr)
-    }))
+    Ok(net::Ipv4Addr::from(unsafe { (*addr).sin_addr.s_addr.to_ne_bytes() }))
 }
 
 #[cfg(target_os = "linux")]
 fn get_if_ipv6(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv6Addr> {
-    
-
     let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
 
     if err == -1 {
@@ -240,27 +232,22 @@ fn get_if_mac(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<Mac> {
 
 #[cfg(target_os = "linux")]
 fn get_file_default_gateway() -> Option<net::Ipv4Addr> {
-    use std::mem;
     use std::{fs, io::BufRead};
 
     let file = fs::File::open("/proc/net/route").ok()?;
     let reader = io::BufReader::new(file);
 
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            let mut fields = line.split('\t');
-            let interface = fields.next();
-            let destination = fields.next();
-            let gateway = fields.next();
+    for line in reader.lines().flatten() {
+        let mut fields = line.split('\t');
+        let interface = fields.next();
+        let destination = fields.next();
+        let gateway = fields.next();
 
-            if let (Some(_), Some(destination), Some(gateway)) = (interface, destination, gateway) {
-                if destination == "00000000" {
-                    let gateway_ip = u32::from_str_radix(gateway, 16).ok()?;
+        if let (Some(_), Some(destination), Some(gateway)) = (interface, destination, gateway) {
+            if destination == "00000000" {
+                let gateway_ip = u32::from_str_radix(gateway, 16).ok()?;
 
-                    return Some(net::Ipv4Addr::from(unsafe {
-                        mem::transmute::<_, [u8; IPV4_LEN]>(gateway_ip)
-                    }));
-                }
+                return Some(net::Ipv4Addr::from(gateway_ip.to_ne_bytes()));
             }
         }
     }

@@ -1,10 +1,10 @@
-# Cursock v1.0.1
+# Cursock v1.2.7
 Crate for raw socketing, can send raw packets and some protocols
 
 ## Changelog
-- Reimplemented Icmp and Arp protos
-- removed `curerr` crate, now using std::io::Error for error handling
-- Added Adapter struct
+- reimplemented `Icmp`, `Arp` and `Adapter` structs
+- added `IpPacked` which represents eth + (ipv4 | ipv6) headers
+- handling dest mac address for `Icmp` struct
 
 ## Todo
 - Add ipv6 support for Icmp
@@ -26,14 +26,10 @@ Crate for raw socketing, can send raw packets and some protocols
 use cursock::*;
 use cursock::utils::*;
 
-#[cfg(target_os = "linux")]
-let socket = Socket::new("wlan0", IpVer::V6).expect("initialize error"); // Linux
-#[cfg(target_os = "windows")]
-let socket = Socket::new("10", IpVer::V6).expect("initialize error"); // Windows, id of the interface you can get running "route PRINT"
+let socket = Socket::new("wlan0").expect("initialize error");
+let mut buffer = [0; 1000];
 
-let buffer: [u8; 1024] = [0; 1024];
+socket.read_raw_packet(&mut buffer).expect("read error");
 
-socket.send_raw_packet(&buffer).expect("send error");
-
-socket.destroy()
+socket.destroy();
 ```
