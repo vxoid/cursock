@@ -6,6 +6,9 @@ Crate for raw socketing, can send raw packets and some protocols
 - removed `curerr` crate, now using std::io::Error for error handling
 - Added Adapter struct
 
+## Todo
+- Add ipv6 support for Icmp
+
 ## Protocols
 - Arp
 - Icmp

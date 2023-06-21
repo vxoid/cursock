@@ -101,9 +101,9 @@ impl Clone for Adapter {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            ipv4: self.ipv4.clone(),
-            ipv6: self.ipv6.clone(),
-            gateway: self.gateway.clone(),
+            ipv4: self.ipv4,
+            ipv6: self.ipv6,
+            gateway: self.gateway,
             mac: self.mac.clone(),
             guid: self.guid.clone(),
         }
@@ -233,11 +233,7 @@ fn get_if_mac(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<Mac> {
 
     let mut mac: [u8; MAC_LEN] = [0; MAC_LEN];
 
-    memcpy(
-        mac.as_mut_ptr(),
-        sa_data.as_ptr(),
-        MAC_LEN,
-    );
+    memcpy(mac.as_mut_ptr(), sa_data.as_ptr(), MAC_LEN);
 
     Ok(Mac::from(mac))
 }
@@ -284,7 +280,6 @@ fn get_interface_info(
     String,
 )> {
     use crate::ccs::AF_INET;
-    use std::mem;
 
     let mut out_buf_len: u32 = 0;
     let flags = ccs::GAA_FLAG_INCLUDE_GATEWAYS;
@@ -350,7 +345,7 @@ fn get_interface_info(
                 })
             };
             let name = slice
-                .into_iter()
+                .iter()
                 .map(|u| std::char::from_u32(*u as u32).unwrap())
                 .collect::<String>();
 
@@ -362,9 +357,7 @@ fn get_interface_info(
                     unsafe { &*(r_gateway.address.lp_sockaddr as *const ccs::sockaddr_in) };
 
                 if sockaddr.sin_family == AF_INET as i16 {
-                    gateway_ip = Some(net::Ipv4Addr::from(unsafe {
-                        mem::transmute::<_, [u8; IPV4_LEN]>(sockaddr.sin_addr.s_addr)
-                    }));
+                    gateway_ip = Some(net::Ipv4Addr::from(sockaddr.sin_addr.s_addr.to_ne_bytes()));
                     break;
                 }
 
@@ -380,7 +373,7 @@ fn get_interface_info(
 
                 match sockaddr.sa_family as usize {
                     ccs::AF_INET => {
-                        if let Some(_) = ipv4 {
+                        if ipv4.is_some() {
                             unicast_addr = unicast_addr_r.next;
                             continue;
                         }
@@ -389,10 +382,10 @@ fn get_interface_info(
                             &*(unicast_addr_r.address.lp_sockaddr as *const ccs::sockaddr_in)
                         };
 
-                        ipv4 = Some(net::Ipv4Addr::from(unsafe { mem::transmute::<_, [u8; IPV4_LEN]>(sockaddr.sin_addr.s_addr) }))
+                        ipv4 = Some(net::Ipv4Addr::from(sockaddr.sin_addr.s_addr.to_ne_bytes()))
                     }
                     ccs::AF_INET6 => {
-                        if let Some(_) = ipv6 {
+                        if ipv6.is_some() {
                             unicast_addr = unicast_addr_r.next;
                             continue;
                         }

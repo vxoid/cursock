@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::io;
 use std::marker;
 use std::net;
@@ -29,6 +31,7 @@ impl<'a, T> IpPacket<'a, T> {
 }
 
 impl<'a> IpPacket<'a, V4> {
+    /// Generates ip packet
     pub fn bytes(
         self,
         arp: &mut Arp,
@@ -89,9 +92,3 @@ impl<'a> IpPacket<'a, V4> {
         Ok(buffer)
     }
 }
-
-// impl IpPacket<V6> {
-//   pub fn bytes(payload: &[u8]) -> Vec<u8> {
-
-//   }
-// }

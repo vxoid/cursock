@@ -52,7 +52,7 @@ impl Arp {
 
         if let Some(mac) = self.cache.get(dst_ip) {
             return Ok(ArpResponse::new(
-                dst_ip.clone(),
+                *dst_ip,
                 mac.clone(),
                 src_ip,
                 adapter.get_mac().clone(),
@@ -148,9 +148,7 @@ impl Arp {
             unsafe { &*((buffer.as_ptr() as usize + ETH_HEADER_SIZE) as *mut ArpHeader) };
 
         loop {
-            if let Err(err) = self.socket.read_raw_packet(&mut buffer) {
-                return Err(err);
-            }
+            self.socket.read_raw_packet(&mut buffer)?;
 
             if u16::from_be(eth_header.proto) != ARP_PROTO {
                 continue;

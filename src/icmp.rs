@@ -36,9 +36,10 @@ impl Icmp {
     /// ```
     /// use cursock::*;
     ///
-    /// let icmp = Icmp::new("wlan0").expect("initialize error");
+    /// let mut icmp = Icmp::new("wlan0").expect("initialize error");
     ///
-    /// let connection = icmp.new_connection("192.168.1.1".parse().unwrap()).expect("connection error");
+    /// let ip = "192.168.1.1".parse().unwrap();
+    /// let connection = icmp.new_connection(&ip).expect("connection error");
     /// ```
     pub fn new_connection<'p, 'd>(
         &'p mut self,
@@ -63,7 +64,7 @@ impl Icmp {
     ///
     /// let icmp = Icmp::new("wlan0").expect("initialize error");
     ///
-    /// let ip = net::Ipv4Addr::new(192, 168, 1, 1);
+    /// let ip = net::IpAddr::V4(net::Ipv4Addr::new(192, 168, 1, 1));
     ///
     /// let data = IcmpData::new(IcmpType::EchoRequest, 0, 0, 0x1234, 1, vec![0; 255]);
     /// icmp.send(&ip, data).expect("send error");
@@ -77,12 +78,10 @@ impl Icmp {
             unsafe { &mut *(buffer.as_mut_ptr() as usize as *mut _) };
 
         icmp_header.type_ = icmp_data.get_type().clone().into();
-        icmp_header.id = icmp_data.get_id().clone();
+        icmp_header.id = *icmp_data.get_id();
         icmp_header.sq = icmp_data.get_sq().to_be();
 
-        for i in 0..message.len() {
-            buffer[i + ICMP_HEADER_SIZE] = message[i]
-        }
+        buffer[ICMP_HEADER_SIZE..(message.len() + ICMP_HEADER_SIZE)].copy_from_slice(message);
 
         let icmp_checksum: u16 =
             checksum(icmp_header as *const IcmpHeader as *const u8, buffer_len);
@@ -96,7 +95,7 @@ impl Icmp {
 
                 self.arp.get_socket().send_raw_packet(&payload)
             }
-            net::IpAddr::V6(dst_v6) => todo!(),
+            net::IpAddr::V6(_dst_v6) => todo!(),
         }
     }
 
@@ -189,7 +188,7 @@ impl<'p, 'd> IcmpConnection<'p, 'd> {
     /// use cursock::*;
     /// use std::net;
     ///
-    /// let icmp = Icmp::new("wlan0").expect("initialize error");
+    /// let mut icmp = Icmp::new("wlan0").expect("initialize error");
     ///
     /// let ip = net::Ipv4Addr::new(8, 8, 8, 8);
     ///
@@ -212,7 +211,7 @@ impl<'p, 'd> IcmpConnection<'p, 'd> {
             self.sq,
             message.to_vec(),
         );
-        self.parent.send(&self.dst_ip, data)?;
+        self.parent.send(self.dst_ip, data)?;
 
         let result = self.parent.read(recv_buffer, |ip_data, icmp_data| {
             icmp_data.get_type().clone() == IcmpType::EchoReply

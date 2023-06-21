@@ -177,7 +177,7 @@ impl Socket {
 
         let guid = interface.get_guid();
         let pcap_interface: String = format!("rpcap://\\Device\\NPF_{}", guid);
-        let pcap_interface: CString = CString::new(pcap_interface.clone())
+        let pcap_interface: CString = CString::new(pcap_interface)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err.to_string()))?;
 
         let mut error_buffer: [i8; 256] = [0; 256];
@@ -324,7 +324,7 @@ impl Clone for Socket {
     #[cfg(target_os = "windows")]
     fn clone(&self) -> Self {
         Self {
-            adapter: self.adapter.clone(),
+            adapter: self.adapter,
             interface: self.interface.clone(),
         }
     }
