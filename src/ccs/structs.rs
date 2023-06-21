@@ -96,12 +96,12 @@ pub struct ifmap {
 impl Clone for ifmap {
     fn clone(&self) -> Self {
         Self {
-            mem_start: self.mem_start.clone(),
-            mem_end: self.mem_end.clone(),
-            base_addr: self.base_addr.clone(),
-            irq: self.irq.clone(),
-            dma: self.dma.clone(),
-            port: self.port.clone(),
+            mem_start: self.mem_start,
+            mem_end: self.mem_end,
+            base_addr: self.base_addr,
+            irq: self.irq,
+            dma: self.dma,
+            port: self.port,
         }
     }
 }

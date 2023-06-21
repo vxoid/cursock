@@ -113,11 +113,11 @@ impl Clone for Adapter {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
-            ipv4: self.ipv4.clone(),
-            ipv6: self.ipv6.clone(),
-            gateway: self.gateway.clone(),
+            ipv4: self.ipv4,
+            ipv6: self.ipv6,
+            gateway: self.gateway,
             mac: self.mac.clone(),
-            index: self.index.clone(),
+            index: self.index,
         }
     }
 
@@ -156,14 +156,14 @@ fn get_interface_info(
 
     let ifindex: i32 = get_if_index(socketv4, &mut if_request)?;
 
-    let ipv4 = get_if_ipv4(socketv4, &mut if_request).map_or(None, |ipv4| Some(ipv4));
+    let ipv4 = get_if_ipv4(socketv4, &mut if_request).map_or(None, Some);
 
     let socketv6 = unsafe { ccs::socket(ccs::AF_INET6, ccs::SOCK_DGRAM, 0) };
     if socketv6 < 0 {
         return Err(io::Error::last_os_error());
     }
 
-    let ipv6 = get_if_ipv6(socketv6, &mut if_request).map_or(None, |ipv6| Some(ipv6));
+    let ipv6 = get_if_ipv6(socketv6, &mut if_request).map_or(None, Some);
 
     let mac: Mac = get_if_mac(socketv4, &mut if_request)?;
 
@@ -177,7 +177,7 @@ fn get_if_index(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<i32> {
         return Err(io::Error::last_os_error());
     }
 
-    let index: i32 = unsafe { (*ifr).ifr_ifru.ifru_ifindex.clone() };
+    let index: i32 = unsafe { (*ifr).ifr_ifru.ifru_ifindex };
 
     Ok(index)
 }
@@ -186,9 +186,9 @@ fn get_if_index(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<i32> {
 fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
     use std::mem;
 
-    let err: i32;
+    
 
-    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
 
     if err == -1 {
         return Err(io::Error::last_os_error());
@@ -204,9 +204,9 @@ fn get_if_ipv4(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv4Addr> {
 
 #[cfg(target_os = "linux")]
 fn get_if_ipv6(socket: i32, ifr: *mut ccs::ifreq) -> io::Result<net::Ipv6Addr> {
-    let err: i32;
+    
 
-    err = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
+    let err: i32 = unsafe { ccs::ioctl(socket, ccs::SIOCGIFADDR, ifr) };
 
     if err == -1 {
         return Err(io::Error::last_os_error());
@@ -257,9 +257,9 @@ fn get_file_default_gateway() -> Option<net::Ipv4Addr> {
                 if destination == "00000000" {
                     let gateway_ip = u32::from_str_radix(gateway, 16).ok()?;
 
-                    return Some(net::Ipv4Addr::from(net::Ipv4Addr::from(unsafe {
+                    return Some(net::Ipv4Addr::from(unsafe {
                         mem::transmute::<_, [u8; IPV4_LEN]>(gateway_ip)
-                    })));
+                    }));
                 }
             }
         }

@@ -285,7 +285,7 @@ impl Socket {
         let mut addr: ccs::sockaddr_ll = ccs::sockaddr_ll {
             sll_family: 0,
             sll_protocol: 0,
-            sll_ifindex: self.get_adapter().get_index().clone(),
+            sll_ifindex: *self.get_adapter().get_index(),
             sll_hatype: 0,
             sll_pkttype: 0,
             sll_halen: MAC_LEN as u8,
@@ -331,7 +331,7 @@ impl Clone for Socket {
     #[cfg(target_os = "linux")]
     fn clone(&self) -> Self {
         Self {
-            socket: self.socket.clone(),
+            socket: self.socket,
             interface: self.interface.clone(),
         }
     }
